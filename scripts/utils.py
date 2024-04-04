@@ -6,8 +6,7 @@ import numpy as np
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, PoseArray, Pose
 from dataspeed_ulc_msgs.msg import UlcCmd
-from hololens_ros_communication import hololens_info
-
+from hololens_ros_communication.msg import hololens_info
 
 def delta_yaw_correction(delta_yaw):
     if delta_yaw > math.pi:
@@ -152,3 +151,55 @@ def goal_pose_publisher(goal_pose, N, frame_id = 'map'):
         pose.orientation.w = quaternion[3]
         msg.poses.append(pose)
     return msg
+
+def host_vehicle_coordinate_transformation(traffic_vehicle_pose, host_vehicle_pose):
+    traffic_x = traffic_vehicle_pose[0]
+    traffic_y = traffic_vehicle_pose[1]
+    traffic_z = traffic_vehicle_pose[2]
+    traffic_yaw = traffic_vehicle_pose[3]
+    traffic_pitch = traffic_vehicle_pose[4]
+
+    host_x = host_vehicle_pose[0]
+    host_y = host_vehicle_pose[1]
+    host_z = host_vehicle_pose[2]
+    host_yaw = host_vehicle_pose[3]
+    host_pitch = host_vehicle_pose[4]
+
+    dx = traffic_x - host_x
+    dy = traffic_y - host_y
+    dz = traffic_z - host_z
+    dxdy = (dx**2 + dy**2)**0.5
+
+    x_ego_coord = dx * math.cos(host_yaw) + dy * math.sin(host_yaw)
+    y_ego_coord = -dx * math.sin(host_yaw) + dy * math.cos(host_yaw)
+    yaw_ego_coord = yaw_change_correction(traffic_yaw - host_yaw)
+    z_ego_coord = -dxdy * math.sin(host_pitch) + dz * math.cos(host_pitch)
+    pitch_ego_coord = traffic_pitch - host_pitch
+
+    return [x_ego_coord, y_ego_coord, z_ego_coord, yaw_ego_coord, pitch_ego_coord]
+
+def yaw_change_correction(delta_yaw):
+    if delta_yaw > math.pi:
+        delta_yaw = delta_yaw - 2*math.pi
+    elif delta_yaw < -math.pi:
+        delta_yaw = delta_yaw + 2*math.pi
+    else:
+        delta_yaw = delta_yaw
+    return delta_yaw
+
+def construct_hololens_info_msg(serial_number, num_SV, Sv_id, Sv_x, Sv_y, Sv_z, Sv_pitch, Sv_yaw, Sv_vx, Sv_vy, Sv_acc, Sv_braking):
+    hololens_message = hololens_info()
+    hololens_message.serial = serial_number
+    hololens_message.num_SVs_x = num_SV
+    hololens_message.virtual_vehicle_id = Sv_id
+    hololens_message.S_v_x = Sv_x
+    hololens_message.S_v_y = Sv_y
+    hololens_message.S_v_z = Sv_z
+    hololens_message.S_v_pitch = Sv_pitch
+    hololens_message.S_v_yaw = Sv_yaw
+    hololens_message.S_v_acc = Sv_acc
+    hololens_message.S_v_brake_status = Sv_braking
+    hololens_message.S_v_vx = Sv_vx
+    hololens_message.S_v_vy = Sv_vy
+
+    return hololens_message

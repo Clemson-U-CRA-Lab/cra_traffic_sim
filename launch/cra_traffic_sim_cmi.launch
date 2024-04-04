@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<launch>
+    <param name="map_1" value="CMI_outerloop_mach_e.csv"/>
+    <param name="map_2" value="CMI_outerloop_mach_e_wider_lane.csv"/>
+    <param name="spd_map" value="US06_CMI_Urban_speed_profile.csv"/>
+    <param name="num_vehicles" value="1"/>
+    <node pkg="cra_traffic_sim" type="car_following_us06_profile.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
+</launch>
