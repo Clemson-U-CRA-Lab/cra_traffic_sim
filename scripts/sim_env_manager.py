@@ -174,3 +174,57 @@ class cmi_road_reader:
         acc_t = self.acc[t_id]
 
         return speed_t, dist_t, acc_t
+
+class hololens_message_manager():
+    def __init__(self, num_vehicles):
+        self.hololens_message = hololens_info()
+        self.serial = 0
+        self.num_SVs_x = num_vehicles
+        self.virtual_vehicle_id = np.zeros((1, num_vehicles), dtype=int).tolist()[0]
+        self.S_v_x = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
+        self.S_v_y = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
+        self.S_v_z = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
+        self.S_v_pitch = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
+        self.S_v_yaw = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
+        self.S_v_acc = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
+        self.S_v_vx = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
+        self.S_v_vy = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
+        self.S_v_brake_status = np.zeros((1, num_vehicles), dtype=bool).tolist()[0]
+
+        self.Ego_x = 0.0
+        self.Ego_y = 0.0
+        self.Ego_z = 0.0
+        self.Ego_pitch = 0.0
+        self.Ego_yaw = 0.0
+        self.Ego_acc = 0.0
+        self.Ego_omega = 0.0
+        self.Ego_v = 0.0
+
+        self.pub_virtual_traffic_info = rospy.Publisher(
+            '/virtual_sim_info', hololens_info, queue_size=1)
+        
+    def construct_hololens_info_msg(self):
+        self.hololens_message.serial = self.serial
+        self.hololens_message.num_SVs_x = self.num_SVs_x
+        self.hololens_message.virtual_vehicle_id = self.virtual_vehicle_id
+        self.hololens_message.S_v_x = self.S_v_x
+        self.hololens_message.S_v_y = self.S_v_y
+        self.hololens_message.S_v_z = self.S_v_z
+        self.hololens_message.S_v_pitch = self.S_v_pitch
+        self.hololens_message.S_v_yaw = self.S_v_yaw
+        self.hololens_message.S_v_acc = self.S_v_acc
+        self.hololens_message.S_v_vx = self.S_v_vx
+        self.hololens_message.S_v_vy = self.S_v_vy
+        self.hololens_message.S_v_brake_status = self.S_v_brake_status
+
+        self.hololens_message.Ego_acc = self.Ego_acc
+        self.hololens_message.Ego_omega = self.Ego_omega
+        self.hololens_message.Ego_v = self.Ego_v
+        self.hololens_message.Ego_x = self.Ego_x
+        self.hololens_message.Ego_y = self.Ego_y
+        self.hololens_message.Ego_z = self.Ego_z
+        self.hololens_message.Ego_pitch = self.Ego_pitch
+        self.hololens_message.Ego_yaw = self.Ego_yaw
+    
+    def publish_virtual_sim_info(self):
+        self.pub_virtual_traffic_info.publish(self.hololens_message)

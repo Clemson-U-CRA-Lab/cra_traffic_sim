@@ -33,6 +33,7 @@ if __name__ == "__main__":
     rate = rospy.Rate(100)
 
     traffic_manager = CMI_traffic_sim(num_vehicles=num_Sv)
+    virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=12)
     traffic_map_manager = cmi_road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file)
     traffic_map_manager.read_cmi_data()
@@ -44,7 +45,17 @@ if __name__ == "__main__":
     while not rospy.is_shutdown():
         try:
             sim_t = time.time() - start_t
-            msg_counter += 1
+            
+            virtual_traffic_sim_info_manager.serial = msg_counter
+            virtual_traffic_sim_info_manager.Ego_acc = traffic_manager.ego_acc
+            virtual_traffic_sim_info_manager.Ego_omega = traffic_manager.ego_omega
+            virtual_traffic_sim_info_manager.Ego_v = traffic_manager.ego_v
+            virtual_traffic_sim_info_manager.Ego_x = traffic_manager.ego_x
+            virtual_traffic_sim_info_manager.Ego_y = traffic_manager.ego_y
+            virtual_traffic_sim_info_manager.Ego_z = traffic_manager.ego_z
+            virtual_traffic_sim_info_manager.Ego_yaw = traffic_manager.ego_yaw
+            virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
+            
             if (sim_t < 0.5):
                 s_ego_init = traffic_map_manager.find_ego_vehicle_distance_reference(np.array([[traffic_manager.ego_x],
                                                                                                [traffic_manager.ego_y],
@@ -53,17 +64,39 @@ if __name__ == "__main__":
                 traffic_manager.traffic_initialization(s_ego=s_ego_init, ds=12)
                 continue
             else:
+                msg_counter += 1
                 spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
-                traffic_manager.traffic_update(dt=1/100, a=acc_t, v=spd_t, dist=dist_t, s_init=s_ego_init, vehicle_id=0, ds=12)
+                
                 # Find virtual traffic global poses
                 for i in range(num_Sv):
+                    traffic_manager.traffic_update(dt=1/100, a=acc_t, v=spd_t, dist=dist_t, s_init=s_ego_init, vehicle_id=i, ds=12)
                     traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i][0])
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                          traffic_manager.ego_z, traffic_manager.ego_yaw,
                                          traffic_manager.ego_pitch]
                     local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
-                    # Todo  - Construct hololens message and publish as virtual_sim_info
-            msg_counter += 1
+                    
+                    # Update virtual traffic simulation information
+                    virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
+                    virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
+                    virtual_traffic_sim_info_manager.S_v_y[i] = local_traffic_vehicle_poses[1]
+                    virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
+                    virtual_traffic_sim_info_manager.S_v_yaw[i] = local_traffic_vehicle_poses[3]
+                    virtual_traffic_sim_info_manager.S_v_pitch[i] = local_traffic_vehicle_poses[4]
+                    
+                    # Update virtual traffic braking status
+                    if traffic_manager.traffic_alon[i] <= 0:
+                        virtual_traffic_sim_info_manager.S_v_brake_status[i] = True
+                    else:
+                        virtual_traffic_sim_info_manager.S_v_brake_status[i] = False
+                
+                    virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
+                    virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
+            
+            # Publish the traffic information
+            virtual_traffic_sim_info_manager.construct_hololens_info_msg()
+            virtual_traffic_sim_info_manager.publish_virtual_sim_info()
+            
             rate.sleep()
         except IndexError:
             continue
