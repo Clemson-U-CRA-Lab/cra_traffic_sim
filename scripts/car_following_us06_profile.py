@@ -14,7 +14,7 @@ from utils import *
 # Define constants
 RAD_TO_DEGREE = 52.296
 
-if __name__ == "__main__":
+def main_single_lane_following():
     # Path Parameters
     current_dirname = os.path.dirname(__file__)
     parent_dir = os.path.abspath(os.path.join(current_dirname, os.pardir))
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=12)
     traffic_map_manager = cmi_road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file)
-    traffic_map_manager.read_cmi_data()
+    traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
 
     msg_counter = 0
@@ -102,3 +102,7 @@ if __name__ == "__main__":
             continue
         except RuntimeError:
             continue
+
+
+if __name__ == "__main__":
+    main_single_lane_following()
