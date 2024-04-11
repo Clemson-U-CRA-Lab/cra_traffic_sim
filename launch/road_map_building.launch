@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>
+    <param name="map" value="ITIC_lane_1.csv"/>
+    <param name="distance_gap" value="0.3"/>
+    <node pkg="cra_traffic_sim" type="road_map_building.py" name="road_profile_mapping" output="screen"/>
+</launch>

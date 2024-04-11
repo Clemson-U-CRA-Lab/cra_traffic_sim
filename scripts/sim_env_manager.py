@@ -86,7 +86,7 @@ class cmi_road_reader:
         self.cmi_road_file = map_filename
         self.speed_profile_file = speed_profile_filename
 
-    def read_cmi_data(self):
+    def read_map_data(self):
         with open(self.cmi_road_file) as csv_file:
             csv_reader = csv.reader(csv_file, delimiter=',')
             line_data = []
