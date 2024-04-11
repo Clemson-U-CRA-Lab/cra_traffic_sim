@@ -29,9 +29,9 @@ def road_map_building(filename, ros_msg_manager, ds):
             dist_to_prev_pose = ((ros_msg_manager.ego_x - pose[0])**2 +
                                  (ros_msg_manager.ego_y - pose[1])**2 +
                                  (ros_msg_manager.ego_z - pose[2])**2)**0.5
-            print(dist_to_prev_pose)
             dist += dist_to_prev_pose
-            if (dist_to_prev_pose > ds):
+            if (dist_to_prev_pose >= ds):
+                print("Distance Gap: " + str(dist_to_prev_pose) + ". Total Distance is: " + str(dist))
                 str_to_save = str(ros_msg_manager.ego_x) + "," + str(ros_msg_manager.ego_y) + "," + str(ros_msg_manager.ego_z) + "," + str(ros_msg_manager.ego_yaw) + "," + str(ros_msg_manager.ego_pitch) + "," + str(dist) + "\n"
                 map_file.write(str_to_save)
                 pose = [ros_msg_manager.ego_x, ros_msg_manager.ego_y, ros_msg_manager.ego_z, ros_msg_manager.ego_yaw, ros_msg_manager.ego_pitch, dist]

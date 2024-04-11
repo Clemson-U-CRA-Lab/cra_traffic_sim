@@ -55,7 +55,7 @@ class CMI_traffic_sim:
         self.ego_z = msg.data[2]
         self.ego_yaw = msg.data[5]
         self.ego_roll = msg.data[16]
-        self.ego_pitch = msg.data[17] / RAD_TO_DEGREE
+        self.ego_pitch = msg.data[17] / RAD_TO_DEGREE # Convert pitch angle to radian
         self.ego_v_lon = msg.data[3]
 
     def traffic_initialization(self, s_ego, ds, line_number, vehicle_id, vehicle_id_in_lane):
