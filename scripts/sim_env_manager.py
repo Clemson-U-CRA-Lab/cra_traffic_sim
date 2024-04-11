@@ -58,10 +58,10 @@ class CMI_traffic_sim:
         self.ego_pitch = msg.data[17] / RAD_TO_DEGREE
         self.ego_v_lon = msg.data[3]
 
-    def traffic_initialization(self, s_ego, ds):
-        for i in range(self.traffic_num_vehicles):
-            self.traffic_s[i] = s_ego + ds * (i + 1)
-            self.traffic_Sv_id[i] = i
+    def traffic_initialization(self, s_ego, ds, line_number, vehicle_id, vehicle_id_in_lane):
+        self.traffic_s[vehicle_id] = s_ego + ds * (vehicle_id_in_lane + 1)
+        self.traffic_Sv_id[vehicle_id] = vehicle_id
+        self.traffic_l[vehicle_id] = line_number
 
     def traffic_update(self, dt, a, v, dist, s_init, vehicle_id, ds):
         self.traffic_alon[vehicle_id] = a
@@ -144,6 +144,7 @@ class cmi_road_reader:
         cmi_traj_coordinate = np.array([self.x, self.y, self.z])
         dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
         min_ref_coordinate_id = np.argmin(dist_to_map)
+        min_dist_to_map = np.min(dist_to_map)
 
         next_id = (min_ref_coordinate_id + 1) % len(self.s)
         prev_id = (min_ref_coordinate_id - 1)
@@ -164,7 +165,7 @@ class cmi_road_reader:
         w = dist_to_next / (dist_to_next + dist_to_prev)
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
 
-        return s_ref
+        return s_ref, min_dist_to_map
 
     def find_speed_profile_information(self, sim_t):
         record_t = np.array(self.t)

@@ -57,11 +57,12 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
             
             if (sim_t < 0.5):
-                s_ego_init = traffic_map_manager.find_ego_vehicle_distance_reference(np.array([[traffic_manager.ego_x],
+                # Find initial distance as start distance on the map
+                s_ego_init, _ = traffic_map_manager.find_ego_vehicle_distance_reference(np.array([[traffic_manager.ego_x],
                                                                                                [traffic_manager.ego_y],
                                                                                                [traffic_manager.ego_z]]))
 
-                traffic_manager.traffic_initialization(s_ego=s_ego_init, ds=12)
+                traffic_manager.traffic_initialization(s_ego=s_ego_init, ds=12, line_number=0)
                 continue
             else:
                 msg_counter += 1
