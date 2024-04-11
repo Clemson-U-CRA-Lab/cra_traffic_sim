@@ -67,7 +67,6 @@ class CMI_traffic_sim:
         self.traffic_alon[vehicle_id] = a
         self.traffic_v[vehicle_id] = 0.5 * (self.traffic_v[vehicle_id] + self.traffic_alon[vehicle_id] * dt) + 0.5 * v
         self.traffic_s[vehicle_id] = s_init + dist + ds * (vehicle_id + 1)
-                                    
 
 class cmi_road_reader:
     def __init__(self, map_filename, speed_profile_filename):
@@ -177,20 +176,20 @@ class cmi_road_reader:
         return speed_t, dist_t, acc_t
 
 class hololens_message_manager():
-    def __init__(self, num_vehicles):
+    def __init__(self, num_vehicles, max_num_vehicles):
         self.hololens_message = hololens_info()
         self.serial = 0
         self.num_SVs_x = num_vehicles
-        self.virtual_vehicle_id = np.zeros((1, num_vehicles), dtype=int).tolist()[0]
-        self.S_v_x = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
-        self.S_v_y = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
-        self.S_v_z = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
-        self.S_v_pitch = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
-        self.S_v_yaw = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
-        self.S_v_acc = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
-        self.S_v_vx = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
-        self.S_v_vy = np.zeros((1, num_vehicles), dtype=float).tolist()[0]
-        self.S_v_brake_status = np.zeros((1, num_vehicles), dtype=bool).tolist()[0]
+        self.virtual_vehicle_id = np.zeros((1, max_num_vehicles), dtype=int).tolist()[0]
+        self.S_v_x = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_y = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_z = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_pitch = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_yaw = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_acc = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_vx = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_vy = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_brake_status = np.zeros((1, max_num_vehicles), dtype=bool).tolist()[0]
 
         self.Ego_x = 0.0
         self.Ego_y = 0.0

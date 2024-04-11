@@ -37,7 +37,7 @@ def main_lane_change_two_lanes():
 
     traffic_manager = CMI_traffic_sim(num_vehicles=num_Sv)
     virtual_traffic_sim_info_manager = hololens_message_manager(
-        num_vehicles=12)
+        num_vehicles=num_Sv, max_num_vehicles=12)
 
     traffic_map_manager_0 = cmi_road_reader(
         map_filename=map_0_file, speed_profile_filename=spd_0_file)
@@ -115,9 +115,9 @@ def main_lane_change_two_lanes():
                     # Update virtual traffic simulation information
                     virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
                     virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
-                    virtual_traffic_sim_info_manager.S_v_y[i] = local_traffic_vehicle_poses[1]
+                    virtual_traffic_sim_info_manager.S_v_y[i] = -local_traffic_vehicle_poses[1]
                     virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
-                    virtual_traffic_sim_info_manager.S_v_yaw[i] = local_traffic_vehicle_poses[3]
+                    virtual_traffic_sim_info_manager.S_v_yaw[i] = -local_traffic_vehicle_poses[3]
                     virtual_traffic_sim_info_manager.S_v_pitch[i] = local_traffic_vehicle_poses[4]
                     
                     # Update virtual traffic braking status
