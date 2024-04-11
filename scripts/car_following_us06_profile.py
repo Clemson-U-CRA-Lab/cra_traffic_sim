@@ -33,7 +33,7 @@ def main_single_lane_following():
     rate = rospy.Rate(100)
 
     traffic_manager = CMI_traffic_sim(num_vehicles=num_Sv)
-    virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=12)
+    virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=1, max_num_vehicles=12)
     traffic_map_manager = cmi_road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file)
     traffic_map_manager.read_map_data()
@@ -62,7 +62,7 @@ def main_single_lane_following():
                                                                                                [traffic_manager.ego_y],
                                                                                                [traffic_manager.ego_z]]))
 
-                traffic_manager.traffic_initialization(s_ego=s_ego_init, ds=12, line_number=0)
+                traffic_manager.traffic_initialization(s_ego=s_ego_init, ds=12, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
                 continue
             else:
                 msg_counter += 1
@@ -75,14 +75,15 @@ def main_single_lane_following():
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                          traffic_manager.ego_z, traffic_manager.ego_yaw,
                                          traffic_manager.ego_pitch]
+
                     local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     
                     # Update virtual traffic simulation information
                     virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
                     virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
-                    virtual_traffic_sim_info_manager.S_v_y[i] = local_traffic_vehicle_poses[1]
+                    virtual_traffic_sim_info_manager.S_v_y[i] = -local_traffic_vehicle_poses[1]
                     virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
-                    virtual_traffic_sim_info_manager.S_v_yaw[i] = local_traffic_vehicle_poses[3]
+                    virtual_traffic_sim_info_manager.S_v_yaw[i] = -local_traffic_vehicle_poses[3]
                     virtual_traffic_sim_info_manager.S_v_pitch[i] = local_traffic_vehicle_poses[4]
                     
                     # Update virtual traffic braking status
