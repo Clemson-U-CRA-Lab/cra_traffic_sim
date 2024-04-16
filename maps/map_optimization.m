@@ -6,14 +6,14 @@ dbstop if error
 
 save_data = true;
 %%  Load the map
-map_filename = "CMI_outerloop_mach_e_wider_lane.csv";
+map_filename = "itic_dir1_lane2.csv";
 map_data = load(map_filename);
 
 x = map_data(:, 1);
 y = map_data(:, 2);
 z = map_data(:, 3);
 yaw = map_data(:, 4);
-pitch = map_data(:, 5);
+pitch = (map_data(:, 5));
 dist = map_data(:, 6);
 
 % pitch estimated 
