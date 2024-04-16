@@ -69,7 +69,7 @@ class CMI_traffic_sim:
         self.traffic_s[vehicle_id] = s_init + dist + ds * (vehicle_id + 1)
 
 class cmi_road_reader:
-    def __init__(self, map_filename, speed_profile_filename):
+    def __init__(self, map_filename, speed_profile_filename, closed_track = False):
         self.x = []
         self.y = []
         self.z = []
@@ -84,6 +84,7 @@ class cmi_road_reader:
 
         self.cmi_road_file = map_filename
         self.speed_profile_file = speed_profile_filename
+        self.grand_prix_style = closed_track
 
     def read_map_data(self):
         with open(self.cmi_road_file) as csv_file:
@@ -140,13 +141,18 @@ class cmi_road_reader:
         return [traffic_x, traffic_y, traffic_z, traffic_yaw, traffic_pitch]
 
     def find_ego_vehicle_distance_reference(self, ego_poses):
+
         cmi_traj_coordinate = np.array([self.x, self.y, self.z])
         dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
         min_ref_coordinate_id = np.argmin(dist_to_map)
         min_dist_to_map = np.min(dist_to_map)
 
-        next_id = (min_ref_coordinate_id + 1) % len(self.s)
-        prev_id = (min_ref_coordinate_id - 1)
+        if (self.grand_prix_style):
+            next_id = (min_ref_coordinate_id + 1) % len(self.s)
+            prev_id = (min_ref_coordinate_id - 1)
+        else:
+            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s))
+            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s))
 
         x_next = self.x[next_id]
         y_next = self.y[next_id]
@@ -156,10 +162,8 @@ class cmi_road_reader:
         y_prev = self.y[prev_id]
         z_prev = self.z[prev_id]
 
-        dist_to_next = ((ego_poses[0] - x_next)**2 + (ego_poses[1] -
-                        y_next)**2 + (ego_poses[2] - z_next)**2)**0.5
-        dist_to_prev = ((ego_poses[0] - x_prev)**2 + (ego_poses[1] -
-                        y_prev)**2 + (ego_poses[2] - z_prev)**2)**0.5
+        dist_to_next = ((ego_poses[0] - x_next)**2 + (ego_poses[1] - y_next)**2 + (ego_poses[2] - z_next)**2)**0.5
+        dist_to_prev = ((ego_poses[0] - x_prev)**2 + (ego_poses[1] - y_prev)**2 + (ego_poses[2] - z_prev)**2)**0.5
 
         w = dist_to_next / (dist_to_next + dist_to_prev)
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]

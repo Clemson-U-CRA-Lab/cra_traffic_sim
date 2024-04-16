@@ -21,6 +21,12 @@ def main_lane_change_two_lanes():
     parent_dir = os.path.abspath(os.path.join(current_dirname, os.pardir))
 
     num_Sv = rospy.get_param("/num_vehicles")
+    track_style = rospy.get_param("/track_style")
+
+    if track_style == "GrandPrix":
+        closed_loop = True
+    if track_style == "Rally":
+        closed_loop = False
 
     map_0_filename = rospy.get_param("/map_1")
     map_1_filename = rospy.get_param("/map_2")
@@ -40,12 +46,12 @@ def main_lane_change_two_lanes():
         num_vehicles=num_Sv, max_num_vehicles=12)
 
     traffic_map_manager_0 = cmi_road_reader(
-        map_filename=map_0_file, speed_profile_filename=spd_0_file)
+        map_filename=map_0_file, speed_profile_filename=spd_0_file, closed_track=closed_loop)
     traffic_map_manager_0.read_map_data()
     traffic_map_manager_0.read_speed_profile()
 
     traffic_map_manager_1 = cmi_road_reader(
-        map_filename=map_1_file, speed_profile_filename=spd_1_file)
+        map_filename=map_1_file, speed_profile_filename=spd_1_file, closed_track=closed_loop)
     traffic_map_manager_1.read_map_data()
     traffic_map_manager_1.read_speed_profile()
 
@@ -106,10 +112,11 @@ def main_lane_change_two_lanes():
                         s_ego_init = s_ego_init_1
                         traffic_manager.traffic_update(dt=1/100, a=acc_t, v=spd_t, dist=dist_t, s_init=s_ego_init, vehicle_id=i, ds=12)
                         traffic_vehicle_poses = traffic_map_manager_1.find_traffic_vehicle_poses(traffic_manager.traffic_s[i][0])
-                        
+
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                          traffic_manager.ego_z, traffic_manager.ego_yaw,
                                          traffic_manager.ego_pitch]
+                    
                     local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     
                     # Update virtual traffic simulation information
@@ -121,7 +128,7 @@ def main_lane_change_two_lanes():
                     virtual_traffic_sim_info_manager.S_v_pitch[i] = local_traffic_vehicle_poses[4]
                     
                     # Update virtual traffic braking status
-                    if traffic_manager.traffic_alon[i] <= 0:
+                    if traffic_manager.traffic_alon[i] < 0:
                         virtual_traffic_sim_info_manager.S_v_brake_status[i] = True
                     else:
                         virtual_traffic_sim_info_manager.S_v_brake_status[i] = False

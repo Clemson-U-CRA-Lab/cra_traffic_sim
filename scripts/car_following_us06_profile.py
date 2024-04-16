@@ -20,6 +20,12 @@ def main_single_lane_following():
     parent_dir = os.path.abspath(os.path.join(current_dirname, os.pardir))
 
     num_Sv = rospy.get_param("/num_vehicles")
+    track_style = rospy.get_param("/track_style")
+
+    if track_style == "GrandPrix":
+        closed_loop = True
+    if track_style == "Rally":
+        closed_loop = False
 
     map_1_filename = rospy.get_param("/map_1")
     map_2_filename = rospy.get_param("/map_2")
@@ -35,7 +41,7 @@ def main_single_lane_following():
     traffic_manager = CMI_traffic_sim(num_vehicles=num_Sv)
     virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=1, max_num_vehicles=12)
     traffic_map_manager = cmi_road_reader(
-        map_filename=map_1_file, speed_profile_filename=spd_file)
+        map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
 

@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
 <launch>
-    <param name="map_1" value="CMI_outerloop_mach_e.csv"/>
-    <param name="map_2" value="CMI_outerloop_mach_e_wider_lane.csv"/>
-    <param name="spd_map_1" value="US06_CMI_Urban_speed_profile.csv"/>
-    <param name="spd_map_2" value="US06_CMI_Urban_speed_profile.csv"/>
+    <param name="map_1" value="itic_dir0_lane1.csv"/>
+    <param name="map_2" value="itic_dir0_lane2.csv"/>
+    <param name="spd_map_1" value="ITIC_Lane_Change_Modeling_StartLane.csv"/>
+    <param name="spd_map_2" value="ITIC_Lane_Change_Modeling_EndLane.csv"/>
+    <param name="track_style" value="Rally"/>
     <param name="num_vehicles" value="2"/>
     <node pkg="cra_traffic_sim" type="lane_change_itic_two_lanes.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
 </launch>

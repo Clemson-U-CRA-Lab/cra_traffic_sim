@@ -174,6 +174,7 @@ def host_vehicle_coordinate_transformation(traffic_vehicle_pose, host_vehicle_po
     y_ego_coord = -dx * math.sin(host_yaw) + dy * math.cos(host_yaw)
     yaw_ego_coord = yaw_change_correction(traffic_yaw - host_yaw)
     z_ego_coord = -dxdy * math.sin(host_pitch) + dz * math.cos(host_pitch)
+    
     pitch_ego_coord = traffic_pitch - host_pitch
 
     return [x_ego_coord, y_ego_coord, z_ego_coord, yaw_ego_coord, pitch_ego_coord]
