@@ -46,13 +46,13 @@ class CMI_traffic_sim:
             '/virtual_sim_info', hololens_info, queue_size=1)
 
     def lowlevel_bridge_callback(self, msg):
-        self.ego_x = msg.data[0]
-        self.ego_y = msg.data[1]
+        self.ego_x = msg.data[11]
+        self.ego_y = msg.data[12]
         self.ego_z = msg.data[2]
         self.ego_yaw = msg.data[5]
         self.ego_roll = msg.data[16]
         self.ego_pitch = msg.data[17]
-        self.ego_v_lon = msg.data[3]
+        self.ego_v_lon = msg.data[15]
 
     def traffic_initialization(self, s_ego, ds, line_number, vehicle_id, vehicle_id_in_lane):
         self.traffic_s[vehicle_id] = s_ego + ds * (vehicle_id_in_lane + 1)
