@@ -59,10 +59,18 @@ class CMI_traffic_sim:
         self.traffic_Sv_id[vehicle_id] = vehicle_id
         self.traffic_l[vehicle_id] = line_number
 
-    def traffic_update(self, dt, a, v, dist, s_init, vehicle_id, ds):
-        self.traffic_alon[vehicle_id] = a
-        self.traffic_v[vehicle_id] = 0.5 * (self.traffic_v[vehicle_id] + self.traffic_alon[vehicle_id] * dt) + 0.5 * v
-        self.traffic_s[vehicle_id] = s_init + dist + ds * (vehicle_id + 1)
+    def traffic_update(self, dt, a, v_tgt, vehicle_id, ds):
+        # Update velocity to match speed profile
+        v_t = a * dt + self.traffic_v[vehicle_id]
+        dv = v_tgt - v_t
+        if (dv * a > 0):
+            self.traffic_alon[vehicle_id] = a
+            self.traffic_v[vehicle_id] = v_t
+        else:
+            self.traffic_alon[vehicle_id] = 0
+            self.traffic_v[vehicle_id] = v_tgt
+        # Update distance travelled using real-time velocity
+        self.traffic_s[vehicle_id] = self.traffic_s[vehicle_id] + self.traffic_v[vehicle_id] * dt + 0.5 * self.traffic_alon[vehicle_id] * dt**2
 
 class cmi_road_reader:
     def __init__(self, map_filename, speed_profile_filename, closed_track = False):

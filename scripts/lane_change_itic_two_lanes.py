@@ -57,11 +57,12 @@ def main_lane_change_two_lanes():
 
     msg_counter = 0
     start_t = time.time()
+    sim_t = 0
 
     while not rospy.is_shutdown():
         try:
+            delta_t = time.time() - start_t - sim_t
             sim_t = time.time() - start_t
-            
             # Add ego vehicle's information to the hololens sender node
             virtual_traffic_sim_info_manager.serial = msg_counter
             virtual_traffic_sim_info_manager.Ego_acc = traffic_manager.ego_acc
@@ -89,8 +90,8 @@ def main_lane_change_two_lanes():
                 continue
             else:
                 msg_counter += 1
-                spd_t_0, dist_t_0, acc_t_0 = traffic_map_manager_0.find_speed_profile_information(sim_t=sim_t)
-                spd_t_1, dist_t_1, acc_t_1 = traffic_map_manager_1.find_speed_profile_information(sim_t=sim_t)
+                spd_t_0, _, acc_t_0 = traffic_map_manager_0.find_speed_profile_information(sim_t=sim_t)
+                spd_t_1, _, acc_t_1 = traffic_map_manager_1.find_speed_profile_information(sim_t=sim_t)
                 
                 # Find virtual traffic global poses
                 for i in range(num_Sv):
@@ -98,19 +99,11 @@ def main_lane_change_two_lanes():
                     traffic_vehicle_lane_number = traffic_manager.traffic_l[i]
                     
                     if traffic_vehicle_lane_number == 0:
-                        acc_t = acc_t_0
-                        spd_t = spd_t_0
-                        dist_t = dist_t_0
-                        s_ego_init = s_ego_init_0
-                        traffic_manager.traffic_update(dt=1/100, a=acc_t, v=spd_t, dist=dist_t, s_init=s_ego_init, vehicle_id=i, ds=12)
+                        traffic_manager.traffic_update(dt=delta_t, a=acc_t_0, v_tgt=spd_t_0, vehicle_id=i, ds=12)
                         traffic_vehicle_poses = traffic_map_manager_0.find_traffic_vehicle_poses(traffic_manager.traffic_s[i][0])
                         
                     if traffic_vehicle_lane_number == 1:
-                        acc_t = acc_t_1
-                        spd_t = spd_t_1
-                        dist_t = dist_t_1
-                        s_ego_init = s_ego_init_1
-                        traffic_manager.traffic_update(dt=1/100, a=acc_t, v=spd_t, dist=dist_t, s_init=s_ego_init, vehicle_id=i, ds=12)
+                        traffic_manager.traffic_update(dt=delta_t, a=acc_t_1, v_tgt=spd_t_1, vehicle_id=i, ds=12)
                         traffic_vehicle_poses = traffic_map_manager_1.find_traffic_vehicle_poses(traffic_manager.traffic_s[i][0])
 
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
