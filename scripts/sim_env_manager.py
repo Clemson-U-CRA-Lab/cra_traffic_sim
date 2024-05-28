@@ -42,8 +42,6 @@ class CMI_traffic_sim:
 
         self.sub_lowlevel_bridge = rospy.Subscriber(
             '/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
-        self.pub_virtual_traffic_info = rospy.Publisher(
-            '/virtual_sim_info', hololens_info, queue_size=1)
 
     def lowlevel_bridge_callback(self, msg):
         self.ego_x = msg.data[11]
