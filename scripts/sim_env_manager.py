@@ -57,7 +57,7 @@ class CMI_traffic_sim:
         self.traffic_Sv_id[vehicle_id] = vehicle_id
         self.traffic_l[vehicle_id] = line_number
 
-    def traffic_update(self, dt, a, v_tgt, vehicle_id, ds):
+    def traffic_update(self, dt, a, v_tgt, vehicle_id):
         # Update velocity to match speed profile
         v_t = a * dt + self.traffic_v[vehicle_id]
         dv = v_tgt - v_t

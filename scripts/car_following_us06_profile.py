@@ -76,7 +76,7 @@ def main_single_lane_following():
                 
                 # Find virtual traffic global poses
                 for i in range(num_Sv):
-                    traffic_manager.traffic_update(dt=1/100, a=acc_t, v=spd_t, dist=dist_t, s_init=s_ego_init, vehicle_id=i, ds=12)
+                    traffic_manager.traffic_update(dt=1/100, a=acc_t, v_tgt=spd_t, vehicle_id=i)
                     traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i][0])
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                          traffic_manager.ego_z, traffic_manager.ego_yaw,
