@@ -8,12 +8,14 @@
 import rospy
 from std_msgs.msg import Float64MultiArray
 from hololens_ros_communication.msg import hololens_info
+from cra_traffic_sim.msg import traffic_info
 
 import time
 import numpy as np
 import math
 import os
 from utils import *
+
 
 class CMI_traffic_sim:
     def __init__(self, num_vehicles):
@@ -28,6 +30,7 @@ class CMI_traffic_sim:
         self.traffic_brake_status = np.zeros((1, num_vehicles)).tolist()[0]
         self.traffic_num_vehicles = num_vehicles
         self.traffic_Sv_id = np.zeros((1, num_vehicles)).tolist()[0]
+        self.traffic_info_msg = traffic_info()
 
         self.ego_x = 0.0
         self.ego_y = 0.0
@@ -42,6 +45,8 @@ class CMI_traffic_sim:
 
         self.sub_lowlevel_bridge = rospy.Subscriber(
             '/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
+        self.pub_traffic_info = rospy.Publisher(
+            '/traffic_sim_info', traffic_info, queue_size=1)
 
     def lowlevel_bridge_callback(self, msg):
         self.ego_x = msg.data[11]
@@ -68,10 +73,27 @@ class CMI_traffic_sim:
             self.traffic_alon[vehicle_id] = 0
             self.traffic_v[vehicle_id] = v_tgt
         # Update distance travelled using real-time velocity
-        self.traffic_s[vehicle_id] = self.traffic_s[vehicle_id] + self.traffic_v[vehicle_id] * dt + 0.5 * self.traffic_alon[vehicle_id] * dt**2
+        self.traffic_s[vehicle_id] = self.traffic_s[vehicle_id] + \
+            self.traffic_v[vehicle_id] * dt + 0.5 * \
+            self.traffic_alon[vehicle_id] * dt**2
+            
+    def construct_traffic_sim_info_msg(self):
+        self.traffic_info_msg.serial = self.serial_id
+        self.traffic_info_msg.num_SVs_x = self.traffic_num_vehicles
+        self.traffic_info_msg.virtual_vehicle_id = self.traffic_Sv_id
+        self.traffic_info_msg.S_v_s = self.traffic_s
+        self.traffic_info_msg.S_v_l = self.traffic_l
+        self.traffic_info_msg.S_v_sv = self.traffic_v
+        self.traffic_info_msg.S_v_acc = self.traffic_alon
+        self.traffic_info_msg.S_v_yaw = self.traffic_yaw
+        self.traffic_info_msg.S_v_omega = self.traffic_omega
+        self.traffic_info_msg.S_v_brake_status = self.traffic_brake_status
+        
+    def publish_traffic_sim_info(self):
+        self.pub_traffic_info.publish(self.traffic_info_msg)
 
 class cmi_road_reader:
-    def __init__(self, map_filename, speed_profile_filename, closed_track = False):
+    def __init__(self, map_filename, speed_profile_filename, closed_track=False):
         self.x = []
         self.y = []
         self.z = []
@@ -164,8 +186,10 @@ class cmi_road_reader:
         y_prev = self.y[prev_id]
         z_prev = self.z[prev_id]
 
-        dist_to_next = ((ego_poses[0] - x_next)**2 + (ego_poses[1] - y_next)**2 + (ego_poses[2] - z_next)**2)**0.5
-        dist_to_prev = ((ego_poses[0] - x_prev)**2 + (ego_poses[1] - y_prev)**2 + (ego_poses[2] - z_prev)**2)**0.5
+        dist_to_next = ((ego_poses[0] - x_next)**2 + (ego_poses[1] -
+                        y_next)**2 + (ego_poses[2] - z_next)**2)**0.5
+        dist_to_prev = ((ego_poses[0] - x_prev)**2 + (ego_poses[1] -
+                        y_prev)**2 + (ego_poses[2] - z_prev)**2)**0.5
 
         w = dist_to_next / (dist_to_next + dist_to_prev)
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
@@ -181,21 +205,25 @@ class cmi_road_reader:
 
         return speed_t, dist_t, acc_t
 
+
 class hololens_message_manager():
     def __init__(self, num_vehicles, max_num_vehicles):
         self.hololens_message = hololens_info()
         self.serial = 0
         self.num_SVs_x = num_vehicles
-        self.virtual_vehicle_id = np.zeros((1, max_num_vehicles), dtype=int).tolist()[0]
+        self.virtual_vehicle_id = np.zeros(
+            (1, max_num_vehicles), dtype=int).tolist()[0]
         self.S_v_x = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
         self.S_v_y = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
         self.S_v_z = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_pitch = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.S_v_pitch = np.zeros(
+            (1, max_num_vehicles), dtype=float).tolist()[0]
         self.S_v_yaw = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
         self.S_v_acc = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
         self.S_v_vx = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
         self.S_v_vy = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_brake_status = np.zeros((1, max_num_vehicles), dtype=bool).tolist()[0]
+        self.S_v_brake_status = np.zeros(
+            (1, max_num_vehicles), dtype=bool).tolist()[0]
 
         self.Ego_x = 0.0
         self.Ego_y = 0.0
@@ -208,7 +236,7 @@ class hololens_message_manager():
 
         self.pub_virtual_traffic_info = rospy.Publisher(
             '/virtual_sim_info', hololens_info, queue_size=1)
-        
+
     def construct_hololens_info_msg(self):
         self.hololens_message.serial = self.serial
         self.hololens_message.num_SVs_x = self.num_SVs_x
@@ -231,6 +259,6 @@ class hololens_message_manager():
         self.hololens_message.Ego_z = self.Ego_z
         self.hololens_message.Ego_pitch = self.Ego_pitch
         self.hololens_message.Ego_yaw = self.Ego_yaw
-    
+
     def publish_virtual_sim_info(self):
         self.pub_virtual_traffic_info.publish(self.hololens_message)
