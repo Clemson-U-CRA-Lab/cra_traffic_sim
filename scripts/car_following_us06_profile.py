@@ -36,9 +36,9 @@ def main_single_lane_following():
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
 
     rospy.init_node("CRA_Digital_Twin_Traffic")
-    rate = rospy.Rate(100)
+    rate = rospy.Rate(200)
 
-    traffic_manager = CMI_traffic_sim(num_vehicles=num_Sv)
+    traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv)
     virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=1, max_num_vehicles=12)
     traffic_map_manager = cmi_road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
@@ -47,11 +47,13 @@ def main_single_lane_following():
 
     msg_counter = 0
     start_t = time.time()
+    sim_t = 0.0
 
     while not rospy.is_shutdown():
         try:
+            Dt = time.time() - start_t - sim_t
+            print(Dt)
             sim_t = time.time() - start_t
-            
             virtual_traffic_sim_info_manager.serial = msg_counter
             virtual_traffic_sim_info_manager.Ego_acc = traffic_manager.ego_acc
             virtual_traffic_sim_info_manager.Ego_omega = traffic_manager.ego_omega
@@ -72,11 +74,11 @@ def main_single_lane_following():
                 continue
             else:
                 msg_counter += 1
-                spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
+                spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
                 
                 # Find virtual traffic global poses
                 for i in range(num_Sv):
-                    traffic_manager.traffic_update(dt=1/100, a=acc_t, v_tgt=spd_t, vehicle_id=i)
+                    traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
                     traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i][0])
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                          traffic_manager.ego_z, traffic_manager.ego_yaw,
@@ -102,8 +104,12 @@ def main_single_lane_following():
                     virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
             
             # Publish the traffic information
+            # Construct the ROS message
             virtual_traffic_sim_info_manager.construct_hololens_info_msg()
+            traffic_manager.construct_traffic_sim_info_msg()
+            # Publish the ROS message
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()
+            traffic_manager.publish_traffic_sim_info()
             
             rate.sleep()
         except IndexError:

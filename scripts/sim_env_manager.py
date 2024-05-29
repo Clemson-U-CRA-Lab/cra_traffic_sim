@@ -18,18 +18,18 @@ from utils import *
 
 
 class CMI_traffic_sim:
-    def __init__(self, num_vehicles):
+    def __init__(self, max_num_vehicles, num_vehicles):
         self.serial_id = 0
-        self.traffic_s = np.zeros((1, num_vehicles)).tolist()[0]
-        self.traffic_l = np.zeros((1, num_vehicles)).tolist()[0]
-        self.traffic_yaw = np.zeros((1, num_vehicles)).tolist()[0]
-        self.traffic_pitch = np.zeros((1, num_vehicles)).tolist()[0]
-        self.traffic_alon = np.zeros((1, num_vehicles)).tolist()[0]
-        self.traffic_v = np.zeros((1, num_vehicles)).tolist()[0]
-        self.traffic_omega = np.zeros((1, num_vehicles)).tolist()[0]
-        self.traffic_brake_status = np.zeros((1, num_vehicles)).tolist()[0]
+        self.traffic_s = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.traffic_l = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.traffic_yaw = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.traffic_pitch = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.traffic_alon = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.traffic_v = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.traffic_omega = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
+        self.traffic_brake_status = np.zeros((1, max_num_vehicles), dtype=bool).tolist()[0]
         self.traffic_num_vehicles = num_vehicles
-        self.traffic_Sv_id = np.zeros((1, num_vehicles)).tolist()[0]
+        self.traffic_Sv_id = np.zeros((1, max_num_vehicles), dtype=int).tolist()[0]
         self.traffic_info_msg = traffic_info()
 
         self.ego_x = 0.0
