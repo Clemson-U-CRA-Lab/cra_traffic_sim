@@ -51,9 +51,11 @@ def main_single_lane_following():
 
     while not rospy.is_shutdown():
         try:
+            # Find time interval for current loop
             Dt = time.time() - start_t - sim_t
-            print(Dt)
+            # Update simulation time
             sim_t = time.time() - start_t
+            # Add traffic information to simulation managment class
             virtual_traffic_sim_info_manager.serial = msg_counter
             virtual_traffic_sim_info_manager.Ego_acc = traffic_manager.ego_acc
             virtual_traffic_sim_info_manager.Ego_omega = traffic_manager.ego_omega
@@ -63,7 +65,7 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.Ego_z = traffic_manager.ego_z
             virtual_traffic_sim_info_manager.Ego_yaw = traffic_manager.ego_yaw
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
-            
+            # Initialize the traffic simulation
             if (sim_t < 0.5):
                 # Find initial distance as start distance on the map
                 s_ego_init, _ = traffic_map_manager.find_ego_vehicle_distance_reference(np.array([[traffic_manager.ego_x],
