@@ -31,6 +31,13 @@ class CMI_traffic_sim:
         self.traffic_num_vehicles = num_vehicles
         self.traffic_Sv_id = np.zeros((1, max_num_vehicles), dtype=int).tolist()[0]
         self.traffic_info_msg = traffic_info()
+        
+        self.ego_s = 0.0
+        self.ego_l = 0.0
+        self.ego_sv = 0.0
+        self.ego_acc = 0.0
+        self.ego_yaw = 0.0
+        self.ego_omega = 0.0
 
         self.ego_x = 0.0
         self.ego_y = 0.0
@@ -195,6 +202,34 @@ class cmi_road_reader:
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
 
         return s_ref, min_dist_to_map
+    
+    def find_ego_frenet_pose(self, ego_poses, ego_yaw):
+        # Find closest point from map to the ego vehicle
+        cmi_traj_coordinate = np.array([self.x, self.y, self.z])
+        dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
+        min_ref_coordinate_id = np.argmin(dist_to_map)
+        
+        if (self.grand_prix_style):
+            next_id = (min_ref_coordinate_id + 1) % len(self.s)
+            prev_id = (min_ref_coordinate_id - 1)
+        else:
+            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s))
+            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s))
+
+        x_next = self.x[next_id]
+        y_next = self.y[next_id]
+        # z_next = self.z[next_id]
+        yaw_next = self.yaw[next_id]
+
+        x_prev = self.x[prev_id]
+        y_prev = self.y[prev_id]
+        # z_prev = self.z[prev_id]
+        yaw_prev = self.yaw[next_id]
+        
+        d = np.abs((x_next - x_prev)*(ego_poses[1] - y_prev) - (y_next - y_prev)*(ego_poses[0] - x_prev)) / np.sqrt((x_next - x_prev)**2 + (y_next - y_prev)**2)
+        E_s_yaw = ego_yaw - (yaw_next + yaw_prev) / 2
+        
+        return d, E_s_yaw
 
     def find_speed_profile_information(self, sim_t):
         record_t = np.array(self.t)
