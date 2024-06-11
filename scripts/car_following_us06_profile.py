@@ -58,6 +58,7 @@ def main_single_lane_following():
             # Update simulation time
             sim_t = time.time() - start_t
             # Add traffic information to simulation managment class
+            traffic_manager.serial_id = msg_counter
             virtual_traffic_sim_info_manager.serial = msg_counter
             virtual_traffic_sim_info_manager.Ego_acc = traffic_manager.ego_acc
             virtual_traffic_sim_info_manager.Ego_omega = traffic_manager.ego_omega

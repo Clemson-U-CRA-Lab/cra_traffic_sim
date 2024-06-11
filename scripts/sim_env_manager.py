@@ -64,7 +64,7 @@ class CMI_traffic_sim:
         self.ego_yaw = msg.data[5]
         self.ego_roll = msg.data[16]
         self.ego_pitch = msg.data[17]
-        self.ego_v_lon = msg.data[15]
+        self.ego_v = msg.data[15]
         self.ego_v_north = msg.data[13]
         self.ego_v_east = msg.data[14]
         self.ego_pose_ref = np.array([[self.ego_x],[self.ego_y],[self.ego_z]])
@@ -248,12 +248,12 @@ class cmi_road_reader:
         yaw_prev = self.yaw[next_id]
         
         d = np.abs((y_next - y_prev) * x_t - (x_next - x_prev) * y_t + x_next * y_prev - y_next * x_prev) / np.sqrt((x_next - x_prev)**2 + (y_next - y_prev)**2) # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
-        yaw_avg = (yaw_next + yaw_prev) / 2
-        E_s_yaw = yaw_t - yaw_avg
+        yaw_s = (yaw_next + yaw_prev) / 2
+        E_s_yaw = yaw_t - yaw_s
         
         # Calculate lateral and longitudinal speed
-        v_s = vx * math.cos(yaw_avg) + vy * math.sin(yaw_avg)
-        v_l = - vx * math.sin(yaw_avg) + vy * math.cos(yaw_avg)
+        v_s = vx * math.cos(yaw_s) + vy * math.sin(yaw_s)
+        v_l = - vx * math.sin(yaw_s) + vy * math.cos(yaw_s)
         return d, E_s_yaw, v_s, v_l
 
     def find_speed_profile_information(self, sim_t):
