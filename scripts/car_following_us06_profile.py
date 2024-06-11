@@ -14,6 +14,7 @@ from utils import *
 # Define constants
 RAD_TO_DEGREE = 52.296
 
+
 def main_single_lane_following():
     # Path Parameters
     current_dirname = os.path.dirname(__file__)
@@ -39,7 +40,8 @@ def main_single_lane_following():
     rate = rospy.Rate(200)
 
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv)
-    virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=1, max_num_vehicles=12)
+    virtual_traffic_sim_info_manager = hololens_message_manager(
+        num_vehicles=1, max_num_vehicles=12)
     traffic_map_manager = cmi_road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     traffic_map_manager.read_map_data()
@@ -65,19 +67,19 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.Ego_z = traffic_manager.ego_z
             virtual_traffic_sim_info_manager.Ego_yaw = traffic_manager.ego_yaw
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
+                        
+            s_ego_frenet, _ = traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
+
             # Initialize the traffic simulation
             if (sim_t < 0.5):
                 # Find initial distance as start distance on the map
-                s_ego_init, _ = traffic_map_manager.find_ego_vehicle_distance_reference(np.array([[traffic_manager.ego_x],
-                                                                                               [traffic_manager.ego_y],
-                                                                                               [traffic_manager.ego_z]]))
-
-                traffic_manager.traffic_initialization(s_ego=s_ego_init, ds=12, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
+                traffic_manager.traffic_initialization(
+                    s_ego=s_ego_frenet, ds=12, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
                 continue
             else:
                 msg_counter += 1
                 spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
-                
+
                 # Find virtual traffic global poses
                 for i in range(num_Sv):
                     traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
@@ -86,25 +88,33 @@ def main_single_lane_following():
                                          traffic_manager.ego_z, traffic_manager.ego_yaw,
                                          traffic_manager.ego_pitch]
 
-                    local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
+                    # Find ego vehicle pose on frenet coordinate
+                    l, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref, 
+                                                                                                    ego_yaw=ego_vehicle_poses[3], 
+                                                                                                    vy= traffic_manager.ego_v_north, 
+                                                                                                    vx= traffic_manager.ego_v_east)
                     
+                    traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=l, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
+                    
+                    local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
+
                     # Update virtual traffic simulation information
                     virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
-                    virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
-                    virtual_traffic_sim_info_manager.S_v_y[i] = -local_traffic_vehicle_poses[1]
-                    virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
-                    virtual_traffic_sim_info_manager.S_v_yaw[i] = -local_traffic_vehicle_poses[3]
+                    virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0] 
+                    virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1] # Transfer to right hand coordinate
+                    virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2] 
+                    virtual_traffic_sim_info_manager.S_v_yaw[i] = - local_traffic_vehicle_poses[3] # Transfer to right hand coordinate
                     virtual_traffic_sim_info_manager.S_v_pitch[i] = local_traffic_vehicle_poses[4]
-                    
+
                     # Update virtual traffic braking status
                     if traffic_manager.traffic_alon[i] <= 0:
                         virtual_traffic_sim_info_manager.S_v_brake_status[i] = True
                     else:
                         virtual_traffic_sim_info_manager.S_v_brake_status[i] = False
-                
+
                     virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
                     virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
-            
+
             # Publish the traffic information
             # Construct the ROS message
             virtual_traffic_sim_info_manager.construct_hololens_info_msg()
@@ -112,7 +122,7 @@ def main_single_lane_following():
             # Publish the ROS message
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()
             traffic_manager.publish_traffic_sim_info()
-            
+
             rate.sleep()
         except IndexError:
             continue

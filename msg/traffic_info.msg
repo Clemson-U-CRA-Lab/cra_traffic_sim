@@ -14,6 +14,5 @@ bool[12] S_v_brake_status # Traffic vehicles braking status
 float64 E_v_s # Ego vehicle position in longitudinal direction
 float64 E_v_l # Ego vehicle position in lateral direction
 float64 E_v_sv # Ego vehicle speed in longitudinal direction
-float64 E_v_acc # Ego vehicle longitudinal acceleration
+float64 E_v_lv # Ego vehicle speed in longitudinal direction
 float64 E_v_yaw # Ego vehicle yaw angle with respect to s direction
-float64 E_v_omega # Ego vehicle yaw rate with respect to s direction

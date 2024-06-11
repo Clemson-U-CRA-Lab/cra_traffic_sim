@@ -35,9 +35,10 @@ class CMI_traffic_sim:
         self.ego_s = 0.0
         self.ego_l = 0.0
         self.ego_sv = 0.0
-        self.ego_acc = 0.0
-        self.ego_yaw = 0.0
-        self.ego_omega = 0.0
+        self.ego_lv = 0.0
+        self.ego_yaw_s = 0.0
+        self.ego_v_north = 0.0
+        self.ego_v_east = 0.0
 
         self.ego_x = 0.0
         self.ego_y = 0.0
@@ -47,6 +48,7 @@ class CMI_traffic_sim:
         self.ego_acc = 0.0
         self.ego_omega = 0.0
         self.ego_v = 0.0
+        self.ego_pose_ref = np.zeros((3,1))
 
         self.traffic_initialized = False
 
@@ -63,6 +65,9 @@ class CMI_traffic_sim:
         self.ego_roll = msg.data[16]
         self.ego_pitch = msg.data[17]
         self.ego_v_lon = msg.data[15]
+        self.ego_v_north = msg.data[13]
+        self.ego_v_east = msg.data[14]
+        self.ego_pose_ref = np.array([[self.ego_x],[self.ego_y],[self.ego_z]])
 
     def traffic_initialization(self, s_ego, ds, line_number, vehicle_id, vehicle_id_in_lane):
         self.traffic_s[vehicle_id] = s_ego + ds * (vehicle_id_in_lane + 1)
@@ -83,7 +88,14 @@ class CMI_traffic_sim:
         self.traffic_s[vehicle_id] = self.traffic_s[vehicle_id] + \
             self.traffic_v[vehicle_id] * dt + 0.5 * \
             self.traffic_alon[vehicle_id] * dt**2
-            
+    
+    def ego_vehicle_frenet_update(self, s, l, sv, lv, yaw_s):
+        self.ego_s = s
+        self.ego_l = l
+        self.ego_sv = sv
+        self.ego_lv = lv
+        self.ego_yaw_s = yaw_s
+    
     def construct_traffic_sim_info_msg(self):
         self.traffic_info_msg.serial = self.serial_id
         self.traffic_info_msg.num_SVs_x = self.traffic_num_vehicles
@@ -95,6 +107,11 @@ class CMI_traffic_sim:
         self.traffic_info_msg.S_v_yaw = self.traffic_yaw
         self.traffic_info_msg.S_v_omega = self.traffic_omega
         self.traffic_info_msg.S_v_brake_status = self.traffic_brake_status
+        self.traffic_info_msg.E_v_s = self.ego_s
+        self.traffic_info_msg.E_v_l = self.ego_l
+        self.traffic_info_msg.E_v_sv = self.ego_sv
+        self.traffic_info_msg.E_v_lv = self.ego_lv
+        self.traffic_info_msg.E_v_yaw = self.ego_yaw_s
         
     def publish_traffic_sim_info(self):
         self.pub_traffic_info.publish(self.traffic_info_msg)
@@ -203,7 +220,7 @@ class cmi_road_reader:
 
         return s_ref, min_dist_to_map
     
-    def find_ego_frenet_pose(self, ego_poses, ego_yaw):
+    def find_ego_frenet_pose(self, ego_poses, ego_yaw, vy, vx):
         # Find closest point from map to the ego vehicle
         cmi_traj_coordinate = np.array([self.x, self.y, self.z])
         dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
@@ -215,6 +232,10 @@ class cmi_road_reader:
         else:
             next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s))
             prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s))
+            
+        x_t = ego_poses[0][0]
+        y_t = ego_poses[1][0]
+        yaw_t = ego_yaw
 
         x_next = self.x[next_id]
         y_next = self.y[next_id]
@@ -226,10 +247,14 @@ class cmi_road_reader:
         # z_prev = self.z[prev_id]
         yaw_prev = self.yaw[next_id]
         
-        d = np.abs((x_next - x_prev)*(ego_poses[1] - y_prev) - (y_next - y_prev)*(ego_poses[0] - x_prev)) / np.sqrt((x_next - x_prev)**2 + (y_next - y_prev)**2)
-        E_s_yaw = ego_yaw - (yaw_next + yaw_prev) / 2
+        d = np.abs((y_next - y_prev) * x_t - (x_next - x_prev) * y_t + x_next * y_prev - y_next * x_prev) / np.sqrt((x_next - x_prev)**2 + (y_next - y_prev)**2) # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
+        yaw_avg = (yaw_next + yaw_prev) / 2
+        E_s_yaw = yaw_t - yaw_avg
         
-        return d, E_s_yaw
+        # Calculate lateral and longitudinal speed
+        v_s = vx * math.cos(yaw_avg) + vy * math.sin(yaw_avg)
+        v_l = - vx * math.sin(yaw_avg) + vy * math.cos(yaw_avg)
+        return d, E_s_yaw, v_s, v_l
 
     def find_speed_profile_information(self, sim_t):
         record_t = np.array(self.t)
