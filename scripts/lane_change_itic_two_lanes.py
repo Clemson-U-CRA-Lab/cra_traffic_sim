@@ -45,12 +45,12 @@ def main_lane_change_two_lanes():
     virtual_traffic_sim_info_manager = hololens_message_manager(
         num_vehicles=num_Sv, max_num_vehicles=12)
 
-    traffic_map_manager_0 = cmi_road_reader(
+    traffic_map_manager_0 = road_reader(
         map_filename=map_0_file, speed_profile_filename=spd_0_file, closed_track=closed_loop)
     traffic_map_manager_0.read_map_data()
     traffic_map_manager_0.read_speed_profile()
 
-    traffic_map_manager_1 = cmi_road_reader(
+    traffic_map_manager_1 = road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_1_file, closed_track=closed_loop)
     traffic_map_manager_1.read_map_data()
     traffic_map_manager_1.read_speed_profile()

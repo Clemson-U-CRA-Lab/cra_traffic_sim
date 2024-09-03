@@ -116,7 +116,7 @@ class CMI_traffic_sim:
     def publish_traffic_sim_info(self):
         self.pub_traffic_info.publish(self.traffic_info_msg)
 
-class cmi_road_reader:
+class road_reader:
     def __init__(self, map_filename, speed_profile_filename, closed_track=False):
         self.x = []
         self.y = []

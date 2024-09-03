@@ -42,7 +42,7 @@ def main_single_lane_following():
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv)
     virtual_traffic_sim_info_manager = hololens_message_manager(
         num_vehicles=1, max_num_vehicles=12)
-    traffic_map_manager = cmi_road_reader(
+    traffic_map_manager = road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
