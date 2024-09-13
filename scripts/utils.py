@@ -204,3 +204,6 @@ def construct_hololens_info_msg(serial_number, num_SV, Sv_id, Sv_x, Sv_y, Sv_z, 
     hololens_message.S_v_vy = Sv_vy
 
     return hololens_message
+
+def lane_change_frenet_to_cartesian_conversion(lane_1_poses, lane_2_poses):
+    return None

@@ -7,6 +7,7 @@ from std_msgs.msg import Float64MultiArray
 from trajectory_msgs.msg import MultiDOFJointTrajectory
 from hololens_ros_communication.msg import hololens_info
 from vehicle_overtaking.msg import overtaking_mpc
+from cra_traffic_sim.msg import mpc_pose_reference
 
 import time
 import numpy as np
@@ -43,3 +44,4 @@ class anl_planner_listener:
             self.traj_acc[i] = msg.points[i].accelerations[0].linear.x
             self.traj_lane_cmd[i] = msg.points[i].accelerations[0].linear.y
             self.duration[i] = msg.points[i].time_from_start.secs + msg.points[i].time_from_start.nsecs / 1**10
+            
