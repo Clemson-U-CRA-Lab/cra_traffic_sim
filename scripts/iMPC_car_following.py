@@ -47,13 +47,10 @@ class iMPC_tracker():
         x_0 = ca.MX(x_t0)
         cost = 0.0
         
-        # Add weights of MPC reference to the problem
-        # P = np.diag(self.weight_list)
-        
-        # To-do: Add constraint to enforce initial state to the same as current measurement
+        # Add constraint to enforce initial state to the same as current measurement
         opti.subject_to(x[:, 0] == x_0)
         
-        # To-do: Add constraint to vehicle states update
+        # Add constraint to vehicle states update
         A = ca.MX(np.array([[1, self.dt, self.dt ** 2 / 2], 
                       [0, 1, self.dt], 
                       [0, 0, 1]]))
@@ -90,7 +87,7 @@ class iMPC_tracker():
             cost += self.weight_list[6] * (u[0, t] ** 2)
         
         opti.minimize(cost)
-        opti.solver('ipopt', {"print_time": False}, {"print_level": 0})#, {"acceptable_tol": 0.001})
+        opti.solver('ipopt', {"print_time": False}, {"print_level": 1})#, {'error_on_fail': False})#, {"acceptable_tol": 0.001})
         sol = opti.solve()
         
         s_pred = sol.value(x[0, :])
