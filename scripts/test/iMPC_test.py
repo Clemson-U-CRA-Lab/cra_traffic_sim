@@ -16,6 +16,7 @@ import numpy as np
 import os
 
 sys.path.append("/home/tonyyaoyao/ANL_ws/src/cra_traffic_sim/scripts")
+sys.path.append("/home/tonyyaoyao/ANL_ws/src/inverseMPC/scripts")
 
 from sim_env_manager import *
 from utils import *
@@ -157,8 +158,8 @@ def main_US06_following():
         plt.plot([-0.5, -0.5], [-10, 35], '-k', linewidth=5)
         plt.plot([0.5, 0.5], [-10, 35], '-k', linewidth=5)
         plt.pause(0.001)
-        figname = 'CarFollowing_' + str(step) + ".png"
-        plt.savefig('/home/tonyyaoyao/Pictures/car_following/'+figname)
+        # figname = 'CarFollowing_' + str(step) + ".png"
+        # plt.savefig('/home/tonyyaoyao/Pictures/car_following/'+figname)
         plt.cla()
         
         step += 1
