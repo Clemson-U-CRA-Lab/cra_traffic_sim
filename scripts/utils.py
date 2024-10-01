@@ -205,5 +205,15 @@ def construct_hololens_info_msg(serial_number, num_SV, Sv_id, Sv_x, Sv_y, Sv_z, 
 
     return hololens_message
 
-def lane_change_frenet_to_cartesian_conversion(lane_1_poses, lane_2_poses):
-    return None
+def lane_change_frenet_to_cartesian_conversion(x0, y0, gamma, s_t, l_t, LaneWidth):
+    # Find position of reference poses
+    l_t = (l_t - 1) * LaneWidth
+    x = x0 + s_t * math.cos(gamma) - l_t * math.sin(gamma)
+    y = y0 + s_t * math.sin(gamma) + l_t * math.cos(gamma)
+    
+    # Find orientation of reference poses
+    dx = x[1:] - x[0:-1]
+    dy = y[1:] - y[0:-1]
+    theta = math.atan2(dy, dx)
+    
+    return x[1:], y[1:], theta
