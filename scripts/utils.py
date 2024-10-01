@@ -7,6 +7,7 @@ from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, PoseArray, Pose
 from dataspeed_ulc_msgs.msg import UlcCmd
 from hololens_ros_communication.msg import hololens_info
+from cra_traffic_sim.msg import mpc_pose_reference
 
 def delta_yaw_correction(delta_yaw):
     if delta_yaw > math.pi:
@@ -204,3 +205,21 @@ def construct_hololens_info_msg(serial_number, num_SV, Sv_id, Sv_x, Sv_y, Sv_z, 
     hololens_message.S_v_vy = Sv_vy
 
     return hololens_message
+
+def construct_mpc_pose_reference_msg(serial_id, num_ref, Dt, ref_x, ref_y, ref_yaw, ref_vel, ref_acc):
+    mpc_ref_msg = mpc_pose_reference()
+    
+    # Load the message base information
+    mpc_ref_msg.serial = serial_id
+    mpc_ref_msg.num_reference = num_ref
+    mpc_ref_msg.dt = Dt
+    
+    # Load the reference trajectory information
+    for i in range(num_ref):
+        mpc_ref_msg.x_ref[i] = ref_x[i]
+        mpc_ref_msg.y_ref[i] = ref_y[i]
+        mpc_ref_msg.yaw_ref[i] = ref_yaw[i]
+        mpc_ref_msg.vel_ref[i] = ref_vel[i]
+        mpc_ref_msg.acc_ref[i] = ref_acc[i]
+    
+    return mpc_ref_msg

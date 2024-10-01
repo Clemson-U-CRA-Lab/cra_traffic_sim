@@ -84,6 +84,7 @@ class anl_planner_listener:
 if __name__ == "__main__":
     # Initialize ros node
     rospy.init_node('highlevel_tracker')
+    mpc_msg_publisher = rospy.Publisher('lowlevel_mpc_reference', mpc_pose_reference, queue_size=2)
     rate = rospy.Rate(200)
     highlevel_msg_manager = anl_planner_listener(max_num_vehicles=30)
     
@@ -109,10 +110,26 @@ if __name__ == "__main__":
     else:
         rospy.logfatal("Invalid Direction for run")
     
+    # Message parameters
+    msg_id = 0
+    time_interval = 0.4
+    
     while not rospy.is_shutdown():
         try:
-            highlevel_msg_manager.lane_change_frenet_to_cartesian_conversion(x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.7)
-            print(highlevel_msg_manager.traj_x)
+            if highlevel_msg_manager.highlevel_mpc_initiated:
+                # Update frenet pose to cartesian
+                highlevel_msg_manager.lane_change_frenet_to_cartesian_conversion(x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.7)
+                # Prepare MPC reference message
+                mpc_referece_msg = construct_mpc_pose_reference_msg(serial_id=msg_id,
+                                                                    num_ref=20,
+                                                                    Dt=time_interval,
+                                                                    ref_x=highlevel_msg_manager.traj_x.tolist(),
+                                                                    ref_y=highlevel_msg_manager.traj_y.tolist(),
+                                                                    ref_yaw=highlevel_msg_manager.traj_yaw.tolist(),
+                                                                    ref_vel=highlevel_msg_manager.traj_s_vel.tolist(),
+                                                                    ref_acc=highlevel_msg_manager.traj_acc.tolist())
+                mpc_msg_publisher.publish(mpc_referece_msg)
+                msg_id += 1
             rate.sleep()
         except IndexError:
             continue
