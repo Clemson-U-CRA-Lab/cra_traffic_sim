@@ -3,7 +3,7 @@
 # This code is designed to track the planned trajectory from MIQP lane change traffic planner (Dr. Vahidi's research group)
 
 import rospy
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64MultiArray, Int8
 from trajectory_msgs.msg import MultiDOFJointTrajectory
 from nav_msgs.msg import Odometry
 from hololens_ros_communication.msg import hololens_info
@@ -86,6 +86,8 @@ if __name__ == "__main__":
     # Initialize ros node
     rospy.init_node('highlevel_tracker')
     mpc_msg_publisher = rospy.Publisher('/lowlevel_mpc_reference', mpc_pose_reference, queue_size=2)
+    dir_msg_publisher = rospy.Publisher('/runDirection', Int8, queue_size=2)
+    lowlevel_heartbeat_publisher = rospy.Publisher('/low_level_heartbeat', Int8, queue_size=2)
     rate = rospy.Rate(100)
     highlevel_msg_manager = anl_planner_listener(max_num_vehicles=30)
     
@@ -114,9 +116,22 @@ if __name__ == "__main__":
     # Message parameters
     msg_id = 0
     time_interval = 0.4
+    run_direction_published = False
     
     while not rospy.is_shutdown():
         try:
+            # Publish run direciton only once
+            if not run_direction_published:
+                run_dir_msg = Int8()
+                run_dir_msg.data = run_direction
+                dir_msg_publisher.publish(run_dir_msg)
+                run_direction_published = True
+            
+            # Publish lowlevel heartbeat
+            lowlevel_heartbeat_msg = Int8()
+            lowlevel_heartbeat_msg.data = 1
+            lowlevel_heartbeat_publisher.publish(lowlevel_heartbeat_msg)
+            
             if highlevel_msg_manager.highlevel_mpc_initiated:
                 # Update frenet pose to cartesian
                 highlevel_msg_manager.lane_change_frenet_to_cartesian_conversion(x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.7)
