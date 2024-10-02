@@ -84,8 +84,8 @@ class anl_planner_listener:
 if __name__ == "__main__":
     # Initialize ros node
     rospy.init_node('highlevel_tracker')
-    mpc_msg_publisher = rospy.Publisher('lowlevel_mpc_reference', mpc_pose_reference, queue_size=2)
-    rate = rospy.Rate(200)
+    mpc_msg_publisher = rospy.Publisher('/lowlevel_mpc_reference', mpc_pose_reference, queue_size=2)
+    rate = rospy.Rate(100)
     highlevel_msg_manager = anl_planner_listener(max_num_vehicles=30)
     
     # Define map origins
