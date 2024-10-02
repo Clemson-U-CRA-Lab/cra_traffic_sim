@@ -65,9 +65,10 @@ class anl_planner_listener:
         
     def lane_change_frenet_to_cartesian_conversion(self, x_origin, y_origin, gamma, LaneWidth):
         # Find position of reference poses
-        self.traj_l = (self.traj_l - 1) * LaneWidth
-        x = x_origin + self.traj_s * math.cos(gamma) - self.traj_l * math.sin(gamma)
-        y = y_origin + self.traj_s * math.sin(gamma) + self.traj_l * math.cos(gamma)
+        l_t = (self.traj_l - 1) * LaneWidth
+        s_t = self.traj_s
+        x = x_origin + s_t * math.cos(gamma) - l_t * math.sin(gamma)
+        y = y_origin + s_t * math.sin(gamma) + l_t * math.cos(gamma)
 
         # Find orientation of reference poses
         dx = x[1:] - x[0:-1]
@@ -90,7 +91,7 @@ if __name__ == "__main__":
     
     # Define map origins
     run_direction = rospy.get_param("/runDirection")
-    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_itic.csv")
+    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_long_itic.csv")
     file = open(endpoint_file_path)
     lanes_xy = np.float_(list(csv.reader(file,delimiter=",")))
     file.close()
