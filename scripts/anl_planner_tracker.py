@@ -30,16 +30,16 @@ class anl_planner_listener:
         self.ego_x = 0.0
         self.ego_y = 0.0
         self.ego_ldot = 0.0
-        self.traj_s = np.array([0] * max_num_vehicles)
-        self.traj_l = np.array([0] * max_num_vehicles)
-        self.traj_s_vel = np.array([0] * max_num_vehicles)
-        self.traj_l_vel = np.array([0] * max_num_vehicles)
-        self.traj_acc = np.array([0] * max_num_vehicles)
-        self.traj_lane_cmd = np.array([0] * max_num_vehicles)
+        self.traj_s = np.array([0] * max_num_vehicles, dtype=float)
+        self.traj_l = np.array([0] * max_num_vehicles, dtype=float)
+        self.traj_s_vel = np.array([0] * max_num_vehicles, dtype=float)
+        self.traj_l_vel = np.array([0] * max_num_vehicles, dtype=float)
+        self.traj_acc = np.array([0] * max_num_vehicles, dtype=float)
+        self.traj_lane_cmd = np.array([0] * max_num_vehicles, dtype=int)
         self.duration = np.array([0] * max_num_vehicles)
-        self.traj_x = np.array([0] * max_num_vehicles)
-        self.traj_y = np.array([0] * max_num_vehicles)
-        self.traj_yaw = np.array([0] * max_num_vehicles)
+        self.traj_x = np.array([0] * max_num_vehicles, dtype=float)
+        self.traj_y = np.array([0] * max_num_vehicles, dtype=float)
+        self.traj_yaw = np.array([0] * max_num_vehicles, dtype=float)
         self.vo_joint_sub = rospy.Subscriber('/vo_joint', MultiDOFJointTrajectory, self.vo_joint_callback)
         self.bridge_highlevel_sub = rospy.Subscriber('/odom', Odometry, self.highlevel_bridge_callback)
     
