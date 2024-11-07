@@ -7,7 +7,6 @@ from std_msgs.msg import Float64MultiArray, Int8
 from trajectory_msgs.msg import MultiDOFJointTrajectory
 from nav_msgs.msg import Odometry
 from hololens_ros_communication.msg import hololens_info
-from vehicle_overtaking.msg import overtaking_mpc
 from cra_traffic_sim.msg import mpc_pose_reference
 
 import time
@@ -93,7 +92,7 @@ if __name__ == "__main__":
     
     # Define map origins
     run_direction = rospy.get_param("/runDirection")
-    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_long_itic.csv")
+    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_itic_out.csv")
     file = open(endpoint_file_path)
     lanes_xy = np.float_(list(csv.reader(file,delimiter=",")))
     file.close()
@@ -116,16 +115,16 @@ if __name__ == "__main__":
     # Message parameters
     msg_id = 0
     time_interval = 0.4
-    run_direction_published = False
-    
+    start_t = time.time()
+
     while not rospy.is_shutdown():
+        sim_t = time.time() - start_t
         try:
             # Publish run direciton only once
-            if not run_direction_published:
+            if sim_t < 1:
                 run_dir_msg = Int8()
                 run_dir_msg.data = run_direction
                 dir_msg_publisher.publish(run_dir_msg)
-                run_direction_published = True
             
             # Publish lowlevel heartbeat
             lowlevel_heartbeat_msg = Int8()
