@@ -267,23 +267,26 @@ class road_reader:
 
 
 class hololens_message_manager():
-    def __init__(self, num_vehicles, max_num_vehicles):
+    def __init__(self, num_vehicles, max_num_vehicles, num_traffic_lights, max_num_traffic_lights):
         self.hololens_message = hololens_info()
         self.serial = 0
         self.num_SVs_x = num_vehicles
-        self.virtual_vehicle_id = np.zeros(
-            (1, max_num_vehicles), dtype=int).tolist()[0]
-        self.S_v_x = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_y = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_z = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_pitch = np.zeros(
-            (1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_yaw = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_acc = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_vx = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_vy = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.S_v_brake_status = np.zeros(
-            (1, max_num_vehicles), dtype=bool).tolist()[0]
+        self.num_TL = num_traffic_lights
+        self.virtual_vehicle_id = np.zeros(max_num_vehicles, dtype=int).tolist()
+        self.S_v_x = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.S_v_y = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.S_v_z = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.S_v_pitch = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.S_v_yaw = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.S_v_acc = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.S_v_vx = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.S_v_vy = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.S_v_brake_status = np.zeros(max_num_vehicles, dtype=bool).tolist()
+        
+        self.TL_type = np.zeros(max_num_traffic_lights, dtype=float).tolist()
+        self.TL_ID = np.zeros(max_num_traffic_lights, dtype=float).tolist()
+        self.TL_status = np.zeros(max_num_traffic_lights, dtype=float).tolist()
+        self.TL_ds = np.zeros(max_num_traffic_lights, dtype=float).tolist()
 
         self.Ego_x = 0.0
         self.Ego_y = 0.0
@@ -293,32 +296,40 @@ class hololens_message_manager():
         self.Ego_acc = 0.0
         self.Ego_omega = 0.0
         self.Ego_v = 0.0
+        
+        self.advisory_spd = 0.0
 
         self.pub_virtual_traffic_info = rospy.Publisher(
             '/virtual_sim_info', hololens_info, queue_size=1)
 
-    def construct_hololens_info_msg(self):
-        self.hololens_message.serial = self.serial
-        self.hololens_message.num_SVs_x = self.num_SVs_x
-        self.hololens_message.virtual_vehicle_id = self.virtual_vehicle_id
-        self.hololens_message.S_v_x = self.S_v_x
-        self.hololens_message.S_v_y = self.S_v_y
-        self.hololens_message.S_v_z = self.S_v_z
-        self.hololens_message.S_v_pitch = self.S_v_pitch
-        self.hololens_message.S_v_yaw = self.S_v_yaw
-        self.hololens_message.S_v_acc = self.S_v_acc
-        self.hololens_message.S_v_vx = self.S_v_vx
-        self.hololens_message.S_v_vy = self.S_v_vy
-        self.hololens_message.S_v_brake_status = self.S_v_brake_status
-
-        self.hololens_message.Ego_acc = self.Ego_acc
-        self.hololens_message.Ego_omega = self.Ego_omega
-        self.hololens_message.Ego_v = self.Ego_v
-        self.hololens_message.Ego_x = self.Ego_x
-        self.hololens_message.Ego_y = self.Ego_y
-        self.hololens_message.Ego_z = self.Ego_z
-        self.hololens_message.Ego_pitch = self.Ego_pitch
-        self.hololens_message.Ego_yaw = self.Ego_yaw
+    def construct_hololens_info_msg(self, serial_number):
+        hololens_message = hololens_info()
+        hololens_message.serial = serial_number
+        hololens_message.num_SVs_x = self.num_SVs_x
+        hololens_message.num_TL = self.num_TL
+        
+        for i in range(hololens_message.num_SVs_x):
+            hololens_message.virtual_vehicle_id[i] = self.virtual_vehicle_id[i]
+            hololens_message.S_v_x[i] = self.S_v_x[i]
+            hololens_message.S_v_y[i] = self.S_v_y[i]
+            hololens_message.S_v_z[i] = self.S_v_z[i]
+            hololens_message.S_v_pitch[i] = self.S_v_pitch[i]
+            hololens_message.S_v_yaw[i] = self.S_v_yaw[i]
+            hololens_message.S_v_acc[i] = self.S_v_acc[i]
+            hololens_message.S_v_brake_status[i] = self.S_v_brake_status[i]
+            hololens_message.S_v_vx[i] = self.S_v_vx[i]
+            hololens_message.S_v_vy[i] = self.S_v_vy[i]
+        
+        for j in range(hololens_message.num_TL):
+            hololens_message.TL_Type[j] = self.TL_type[j]
+            hololens_message.TL_ID[j] = self.TL_ID[j]
+            hololens_message.TL_status[j] = self.TL_status[j]
+            hololens_message.TL_ds[j] = self.TL_ds[j]
+        
+        hololens_message.Ego_v = self.Ego_v
+        hololens_message.advisory_spd = self.advisory_spd
+    
+        return hololens_message
 
     def publish_virtual_sim_info(self):
         self.pub_virtual_traffic_info.publish(self.hololens_message)
