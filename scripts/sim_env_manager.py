@@ -20,16 +20,16 @@ from utils import *
 class CMI_traffic_sim:
     def __init__(self, max_num_vehicles, num_vehicles):
         self.serial_id = 0
-        self.traffic_s = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.traffic_l = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.traffic_yaw = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.traffic_pitch = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.traffic_alon = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.traffic_v = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.traffic_omega = np.zeros((1, max_num_vehicles), dtype=float).tolist()[0]
-        self.traffic_brake_status = np.zeros((1, max_num_vehicles), dtype=bool).tolist()[0]
+        self.traffic_s = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_l = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_yaw = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_pitch = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_alon = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_v = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_omega = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_brake_status = np.zeros(max_num_vehicles, dtype=bool).tolist()
         self.traffic_num_vehicles = num_vehicles
-        self.traffic_Sv_id = np.zeros((1, max_num_vehicles), dtype=int).tolist()[0]
+        self.traffic_Sv_id = np.zeros(max_num_vehicles, dtype=int).tolist()
         self.traffic_info_msg = traffic_info()
         
         self.ego_s = 0.0
@@ -178,7 +178,7 @@ class road_reader:
                                   (self.y[id_adjacent] - self.y[id_virtual])**2 +
                                   (self.z[id_adjacent] - self.z[id_virtual])**2)**0.5
 
-        k = abs(ds / dist_between_map_poses)
+        k = np.abs(ds / dist_between_map_poses)
 
         traffic_x = self.x[id_virtual] * (1 - k) + self.x[id_adjacent] * k
         traffic_y = self.y[id_virtual] * (1 - k) + self.y[id_adjacent] * k
@@ -218,7 +218,7 @@ class road_reader:
         w = dist_to_next / (dist_to_next + dist_to_prev)
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
 
-        return s_ref, min_dist_to_map
+        return s_ref[0], min_dist_to_map
     
     def find_ego_frenet_pose(self, ego_poses, ego_yaw, vy, vx):
         # Find closest point from map to the ego vehicle
@@ -302,34 +302,32 @@ class hololens_message_manager():
         self.pub_virtual_traffic_info = rospy.Publisher(
             '/virtual_sim_info', hololens_info, queue_size=1)
 
-    def construct_hololens_info_msg(self, serial_number):
-        hololens_message = hololens_info()
-        hololens_message.serial = serial_number
-        hololens_message.num_SVs_x = self.num_SVs_x
-        hololens_message.num_TL = self.num_TL
+    def construct_hololens_info_msg(self):
+        self.hololens_message = hololens_info()
+        self.hololens_message.serial = self.serial
+        self.hololens_message.num_SVs_x = self.num_SVs_x
+        self.hololens_message.num_TL = self.num_TL
         
-        for i in range(hololens_message.num_SVs_x):
-            hololens_message.virtual_vehicle_id[i] = self.virtual_vehicle_id[i]
-            hololens_message.S_v_x[i] = self.S_v_x[i]
-            hololens_message.S_v_y[i] = self.S_v_y[i]
-            hololens_message.S_v_z[i] = self.S_v_z[i]
-            hololens_message.S_v_pitch[i] = self.S_v_pitch[i]
-            hololens_message.S_v_yaw[i] = self.S_v_yaw[i]
-            hololens_message.S_v_acc[i] = self.S_v_acc[i]
-            hololens_message.S_v_brake_status[i] = self.S_v_brake_status[i]
-            hololens_message.S_v_vx[i] = self.S_v_vx[i]
-            hololens_message.S_v_vy[i] = self.S_v_vy[i]
+        for i in range(self.hololens_message.num_SVs_x):
+            self.hololens_message.virtual_vehicle_id[i] = self.virtual_vehicle_id[i]
+            self.hololens_message.S_v_x[i] = self.S_v_x[i]
+            self.hololens_message.S_v_y[i] = self.S_v_y[i]
+            self.hololens_message.S_v_z[i] = self.S_v_z[i]
+            self.hololens_message.S_v_pitch[i] = self.S_v_pitch[i]
+            self.hololens_message.S_v_yaw[i] = self.S_v_yaw[i]
+            self.hololens_message.S_v_acc[i] = self.S_v_acc[i]
+            self.hololens_message.S_v_brake_status[i] = self.S_v_brake_status[i]
+            self.hololens_message.S_v_vx[i] = self.S_v_vx[i]
+            self.hololens_message.S_v_vy[i] = self.S_v_vy[i]
         
-        for j in range(hololens_message.num_TL):
-            hololens_message.TL_Type[j] = self.TL_type[j]
-            hololens_message.TL_ID[j] = self.TL_ID[j]
-            hololens_message.TL_status[j] = self.TL_status[j]
-            hololens_message.TL_ds[j] = self.TL_ds[j]
+        for j in range(self.hololens_message.num_TL):
+            self.hololens_message.TL_Type[j] = self.TL_type[j]
+            self.hololens_message.TL_ID[j] = self.TL_ID[j]
+            self.hololens_message.TL_status[j] = self.TL_status[j]
+            self.hololens_message.TL_ds[j] = self.TL_ds[j]
         
-        hololens_message.Ego_v = self.Ego_v
-        hololens_message.advisory_spd = self.advisory_spd
-    
-        return hololens_message
+        self.hololens_message.Ego_v = self.Ego_v
+        self.hololens_message.advisory_spd = self.advisory_spd
 
     def publish_virtual_sim_info(self):
         self.pub_virtual_traffic_info.publish(self.hololens_message)
