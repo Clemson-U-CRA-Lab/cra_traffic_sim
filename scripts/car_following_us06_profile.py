@@ -70,6 +70,7 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
                         
             s_ego_frenet, _ = traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
+            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
 
             # Initialize the traffic simulation
             if (sim_t < 0.5):
@@ -86,8 +87,8 @@ def main_single_lane_following():
                     traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
                     traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
-                                         traffic_manager.ego_z, traffic_manager.ego_yaw,
-                                         traffic_manager.ego_pitch]
+                                         ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                         ego_vehicle_ref_poses[4]]
 
                     # Find ego vehicle pose on frenet coordinate
                     l, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref, 
