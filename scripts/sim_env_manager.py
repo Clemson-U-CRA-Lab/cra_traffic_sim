@@ -9,6 +9,7 @@ import rospy
 from std_msgs.msg import Float64MultiArray
 from hololens_ros_communication.msg import hololens_info
 from cra_traffic_sim.msg import traffic_info
+from sensor_msgs.msg import Joy
 
 import time
 import numpy as np
@@ -51,11 +52,19 @@ class CMI_traffic_sim:
         self.ego_pose_ref = np.zeros((3,1))
 
         self.traffic_initialized = False
+        self.sim_start = False
 
         self.sub_lowlevel_bridge = rospy.Subscriber(
             '/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
         self.pub_traffic_info = rospy.Publisher(
             '/traffic_sim_info', traffic_info, queue_size=1)
+        self.sub_joy = rospy.Subscriber("/joy", Joy, self.joy_callback)
+    
+    def joy_callback(self, msg):
+        if msg.buttons[4]:
+            self.sim_start = False
+        if msg.buttons[5]:
+            self.sim_start = True
 
     def lowlevel_bridge_callback(self, msg):
         self.ego_x = msg.data[11]

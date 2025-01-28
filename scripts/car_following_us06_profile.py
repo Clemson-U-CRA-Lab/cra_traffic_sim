@@ -68,54 +68,55 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.Ego_z = traffic_manager.ego_z
             virtual_traffic_sim_info_manager.Ego_yaw = traffic_manager.ego_yaw
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
-                        
+            
             s_ego_frenet, _ = traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
             ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
-
+            
             # Initialize the traffic simulation
-            if (sim_t < 0.5):
+            if (sim_t < 0.2):
                 # Find initial distance as start distance on the map
                 traffic_manager.traffic_initialization(
                     s_ego=s_ego_frenet, ds=12, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
                 continue
             else:
                 msg_counter += 1
-                spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
+                if traffic_manager.sim_start:
+                    spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
 
-                # Find virtual traffic global poses
-                for i in range(num_Sv):
-                    traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                    traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
-                    ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
-                                         ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
-                                         ego_vehicle_ref_poses[4]]
+                    # Find virtual traffic global poses
+                    for i in range(num_Sv):
+                        traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                        ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                             ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                             ego_vehicle_ref_poses[4]]
 
-                    # Find ego vehicle pose on frenet coordinate
-                    l, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref, 
-                                                                                                    ego_yaw=ego_vehicle_poses[3], 
-                                                                                                    vy= traffic_manager.ego_v_north, 
-                                                                                                    vx= traffic_manager.ego_v_east)
-                    
-                    traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=l, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
-                    
-                    local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
+                        # Find ego vehicle pose on frenet coordinate
+                        l, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref, 
+                                                                                                        ego_yaw=ego_vehicle_poses[3], 
+                                                                                                        vy= traffic_manager.ego_v_north, 
+                                                                                                        vx= traffic_manager.ego_v_east)
 
-                    # Update virtual traffic simulation information
-                    virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
-                    virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0] 
-                    virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1] # Transfer to right hand coordinate
-                    virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2] 
-                    virtual_traffic_sim_info_manager.S_v_yaw[i] = - local_traffic_vehicle_poses[3] # Transfer to right hand coordinate
-                    virtual_traffic_sim_info_manager.S_v_pitch[i] = local_traffic_vehicle_poses[4]
+                        traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=l, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
 
-                    # Update virtual traffic braking status
-                    if traffic_manager.traffic_alon[i] <= 0:
-                        virtual_traffic_sim_info_manager.S_v_brake_status[i] = True
-                    else:
-                        virtual_traffic_sim_info_manager.S_v_brake_status[i] = False
+                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
 
-                    virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
-                    virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
+                        # Update virtual traffic simulation information
+                        virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
+                        virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0] 
+                        virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1] # Transfer to right hand coordinate
+                        virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2] 
+                        virtual_traffic_sim_info_manager.S_v_yaw[i] = - local_traffic_vehicle_poses[3] # Transfer to right hand coordinate
+                        virtual_traffic_sim_info_manager.S_v_pitch[i] = local_traffic_vehicle_poses[4]
+
+                        # Update virtual traffic braking status
+                        if traffic_manager.traffic_alon[i] <= 0:
+                            virtual_traffic_sim_info_manager.S_v_brake_status[i] = True
+                        else:
+                            virtual_traffic_sim_info_manager.S_v_brake_status[i] = False
+
+                        virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
+                        virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]                        
 
             # Publish the traffic information
             # Construct the ROS message
