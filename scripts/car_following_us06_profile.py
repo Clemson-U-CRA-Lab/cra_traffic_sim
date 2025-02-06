@@ -48,15 +48,16 @@ def main_single_lane_following():
     traffic_map_manager.read_speed_profile()
 
     msg_counter = 0
-    start_t = time.time()
+    #start_t = time.time()
+    prev_t = time.time()
     sim_t = 0.0
 
     while not rospy.is_shutdown():
         try:
             # Find time interval for current loop
-            Dt = time.time() - start_t - sim_t
-            # Update simulation time
-            sim_t = time.time() - start_t
+            Dt = time.time() - prev_t
+            # Refresh previous frame time
+            prev_t = time.time()
             # Add traffic information to simulation managment class
             traffic_manager.serial_id = msg_counter
             virtual_traffic_sim_info_manager.serial = msg_counter
@@ -73,7 +74,9 @@ def main_single_lane_following():
             ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
             
             # Initialize the traffic simulation
-            if (sim_t < 0.2):
+            if (sim_t < 0.2 and traffic_manager.sim_start):
+                # Update simulation time
+                sim_t += Dt
                 # Find initial distance as start distance on the map
                 traffic_manager.traffic_initialization(
                     s_ego=s_ego_frenet, ds=12, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
@@ -81,8 +84,10 @@ def main_single_lane_following():
             else:
                 msg_counter += 1
                 if traffic_manager.sim_start:
+                    # Update simulation time
+                    sim_t += Dt
                     spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
-
+                    
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
                         traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
@@ -116,7 +121,7 @@ def main_single_lane_following():
                             virtual_traffic_sim_info_manager.S_v_brake_status[i] = False
 
                         virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
-                        virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]                        
+                        virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
 
             # Publish the traffic information
             # Construct the ROS message

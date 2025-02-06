@@ -6,4 +6,5 @@
     <param name="num_vehicles" value="1"/>
     <param name="track_style" value="GrandPrix"/>
     <node pkg="cra_traffic_sim" type="car_following_us06_profile.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
+    <node pkg="joy" type="joy_node" name="joy_node" output="screen" ></node>
 </launch>
