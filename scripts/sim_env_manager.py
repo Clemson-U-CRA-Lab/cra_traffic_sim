@@ -301,8 +301,7 @@ class hololens_message_manager():
         self.serial = 0
         self.num_SVs_x = num_vehicles
         self.num_TL = num_traffic_lights
-        self.virtual_vehicle_id = np.zeros(
-            max_num_vehicles, dtype=int).tolist()
+        self.virtual_vehicle_id = np.zeros(max_num_vehicles, dtype=int).tolist()
         self.S_v_x = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.S_v_y = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.S_v_z = np.zeros(max_num_vehicles, dtype=float).tolist()

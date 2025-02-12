@@ -98,7 +98,7 @@ def main_single_lane_following():
                     for i in range(20):
                         sim_t_ref = sim_t + i
                         v_t, s_t, a_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t_ref)
-                        front_s_t[i] = s_t
+                        front_s_t[i] = s_t + s_ego_frenet
                         front_v_t[i] = v_t
                         front_a_t[i] = a_t
                         
@@ -139,13 +139,13 @@ def main_single_lane_following():
 
             # Publish the traffic information
             # Construct the ROS message
-            virtual_traffic_sim_info_manager.construct_hololens_info_msg()
-            traffic_manager.construct_traffic_sim_info_msg()
+            # virtual_traffic_sim_info_manager.construct_hololens_info_msg()
+            # traffic_manager.construct_traffic_sim_info_msg()
             traffic_manager.construct_vehicle_state_sequence_msg(id=msg_counter, t=sim_t, s=front_s_t, v=front_v_t, a=front_a_t)
             
             # Publish the ROS message
-            virtual_traffic_sim_info_manager.publish_virtual_sim_info()
-            traffic_manager.publish_traffic_sim_info()
+            # virtual_traffic_sim_info_manager.publish_virtual_sim_info()
+            # traffic_manager.publish_traffic_sim_info()
             traffic_manager.publish_vehicle_traj()
 
             rate.sleep()
