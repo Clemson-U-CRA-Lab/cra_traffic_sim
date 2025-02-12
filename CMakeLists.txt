@@ -52,6 +52,7 @@ add_message_files(
   FILES
   traffic_info.msg
   mpc_pose_reference.msg
+  vehicle_traj_seq.msg
 )
 
 ## Generate services in the 'srv' folder

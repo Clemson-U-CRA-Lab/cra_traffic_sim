@@ -8,7 +8,7 @@
 import rospy
 from std_msgs.msg import Float64MultiArray
 from hololens_ros_communication.msg import hololens_info
-from cra_traffic_sim.msg import traffic_info
+from cra_traffic_sim.msg import traffic_info, vehicle_traj_seq
 from sensor_msgs.msg import Joy
 
 import time
@@ -28,11 +28,13 @@ class CMI_traffic_sim:
         self.traffic_alon = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_v = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_omega = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_brake_status = np.zeros(max_num_vehicles, dtype=bool).tolist()
+        self.traffic_brake_status = np.zeros(
+            max_num_vehicles, dtype=bool).tolist()
         self.traffic_num_vehicles = num_vehicles
         self.traffic_Sv_id = np.zeros(max_num_vehicles, dtype=int).tolist()
         self.traffic_info_msg = traffic_info()
-        
+        self.vehicle_traj_msg = vehicle_traj_seq()
+
         self.ego_s = 0.0
         self.ego_l = 0.0
         self.ego_sv = 0.0
@@ -49,7 +51,7 @@ class CMI_traffic_sim:
         self.ego_acc = 0.0
         self.ego_omega = 0.0
         self.ego_v = 0.0
-        self.ego_pose_ref = np.zeros((3,1))
+        self.ego_pose_ref = np.zeros((3, 1))
 
         self.traffic_initialized = False
         self.sim_start = False
@@ -59,7 +61,9 @@ class CMI_traffic_sim:
         self.pub_traffic_info = rospy.Publisher(
             '/traffic_sim_info', traffic_info, queue_size=1)
         self.sub_joy = rospy.Subscriber("/joy", Joy, self.joy_callback)
-    
+        self.pub_vehicle_traj_sequence = rospy.Publisher(
+            '/front_v_traj_seq_v0', vehicle_traj_seq, queue_size=1)
+
     def joy_callback(self, msg):
         if msg.buttons[4]:
             self.sim_start = False
@@ -76,7 +80,8 @@ class CMI_traffic_sim:
         self.ego_v = msg.data[15]
         self.ego_v_north = msg.data[13]
         self.ego_v_east = msg.data[14]
-        self.ego_pose_ref = np.array([[self.ego_x],[self.ego_y],[self.ego_z]])
+        self.ego_pose_ref = np.array(
+            [[self.ego_x], [self.ego_y], [self.ego_z]])
 
     def traffic_initialization(self, s_ego, ds, line_number, vehicle_id, vehicle_id_in_lane):
         self.traffic_s[vehicle_id] = s_ego + ds * (vehicle_id_in_lane + 1)
@@ -97,14 +102,24 @@ class CMI_traffic_sim:
         self.traffic_s[vehicle_id] = self.traffic_s[vehicle_id] + \
             self.traffic_v[vehicle_id] * dt + 0.5 * \
             self.traffic_alon[vehicle_id] * dt**2
-    
+
     def ego_vehicle_frenet_update(self, s, l, sv, lv, yaw_s):
         self.ego_s = s
         self.ego_l = l
         self.ego_sv = sv
         self.ego_lv = lv
         self.ego_yaw_s = yaw_s
-    
+        
+    def construct_vehicle_state_sequence_msg(self, id, t, s, v, a):
+        self.vehicle_traj_seq_msg = vehicle_traj_seq()
+        self.vehicle_traj_seq_msg.sim_t = t
+        self.vehicle_traj_seq_msg.serial = id
+
+        for i in range(len(v)):
+            self.vehicle_traj_seq_msg.front_a[i] = a[i]
+            self.vehicle_traj_seq_msg.front_v[i] = v[i]
+            self.vehicle_traj_seq_msg.front_s[i] = s[i]
+
     def construct_traffic_sim_info_msg(self):
         self.traffic_info_msg.serial = self.serial_id
         self.traffic_info_msg.num_SVs_x = self.traffic_num_vehicles
@@ -121,9 +136,13 @@ class CMI_traffic_sim:
         self.traffic_info_msg.E_v_sv = self.ego_sv
         self.traffic_info_msg.E_v_lv = self.ego_lv
         self.traffic_info_msg.E_v_yaw = self.ego_yaw_s
-        
+
     def publish_traffic_sim_info(self):
         self.pub_traffic_info.publish(self.traffic_info_msg)
+        
+    def publish_vehicle_traj(self):
+        self.pub_vehicle_traj_sequence.publish(self.vehicle_traj_seq_msg)
+
 
 class road_reader:
     def __init__(self, map_filename, speed_profile_filename, closed_track=False):
@@ -228,20 +247,20 @@ class road_reader:
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
 
         return s_ref[0], min_dist_to_map
-    
+
     def find_ego_frenet_pose(self, ego_poses, ego_yaw, vy, vx):
         # Find closest point from map to the ego vehicle
         cmi_traj_coordinate = np.array([self.x, self.y, self.z])
         dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
         min_ref_coordinate_id = np.argmin(dist_to_map)
-        
+
         if (self.grand_prix_style):
             next_id = (min_ref_coordinate_id + 1) % len(self.s)
             prev_id = (min_ref_coordinate_id - 1)
         else:
             next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s))
             prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s))
-            
+
         x_t = ego_poses[0][0]
         y_t = ego_poses[1][0]
         yaw_t = ego_yaw
@@ -255,11 +274,12 @@ class road_reader:
         y_prev = self.y[prev_id]
         # z_prev = self.z[prev_id]
         yaw_prev = self.yaw[next_id]
-        
-        d = np.abs((y_next - y_prev) * x_t - (x_next - x_prev) * y_t + x_next * y_prev - y_next * x_prev) / np.sqrt((x_next - x_prev)**2 + (y_next - y_prev)**2) # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
+
+        d = np.abs((y_next - y_prev) * x_t - (x_next - x_prev) * y_t + x_next * y_prev - y_next * x_prev) / np.sqrt(
+            (x_next - x_prev)**2 + (y_next - y_prev)**2)  # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
         yaw_s = (yaw_next + yaw_prev) / 2
         E_s_yaw = yaw_t - yaw_s
-        
+
         # Calculate lateral and longitudinal speed
         v_s = vx * math.cos(yaw_s) + vy * math.sin(yaw_s)
         v_l = - vx * math.sin(yaw_s) + vy * math.cos(yaw_s)
@@ -281,7 +301,8 @@ class hololens_message_manager():
         self.serial = 0
         self.num_SVs_x = num_vehicles
         self.num_TL = num_traffic_lights
-        self.virtual_vehicle_id = np.zeros(max_num_vehicles, dtype=int).tolist()
+        self.virtual_vehicle_id = np.zeros(
+            max_num_vehicles, dtype=int).tolist()
         self.S_v_x = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.S_v_y = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.S_v_z = np.zeros(max_num_vehicles, dtype=float).tolist()
@@ -291,7 +312,7 @@ class hololens_message_manager():
         self.S_v_vx = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.S_v_vy = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.S_v_brake_status = np.zeros(max_num_vehicles, dtype=bool).tolist()
-        
+
         self.TL_type = np.zeros(max_num_traffic_lights, dtype=float).tolist()
         self.TL_ID = np.zeros(max_num_traffic_lights, dtype=float).tolist()
         self.TL_status = np.zeros(max_num_traffic_lights, dtype=float).tolist()
@@ -305,7 +326,7 @@ class hololens_message_manager():
         self.Ego_acc = 0.0
         self.Ego_omega = 0.0
         self.Ego_v = 0.0
-        
+
         self.advisory_spd = 0.0
 
         self.pub_virtual_traffic_info = rospy.Publisher(
@@ -316,7 +337,7 @@ class hololens_message_manager():
         self.hololens_message.serial = self.serial
         self.hololens_message.num_SVs_x = self.num_SVs_x
         self.hololens_message.num_TL = self.num_TL
-        
+
         for i in range(self.hololens_message.num_SVs_x):
             self.hololens_message.virtual_vehicle_id[i] = self.virtual_vehicle_id[i]
             self.hololens_message.S_v_x[i] = self.S_v_x[i]
@@ -328,13 +349,13 @@ class hololens_message_manager():
             self.hololens_message.S_v_brake_status[i] = self.S_v_brake_status[i]
             self.hololens_message.S_v_vx[i] = self.S_v_vx[i]
             self.hololens_message.S_v_vy[i] = self.S_v_vy[i]
-        
+
         for j in range(self.hololens_message.num_TL):
             self.hololens_message.TL_Type[j] = self.TL_type[j]
             self.hololens_message.TL_ID[j] = self.TL_ID[j]
             self.hololens_message.TL_status[j] = self.TL_status[j]
             self.hololens_message.TL_ds[j] = self.TL_ds[j]
-        
+
         self.hololens_message.Ego_v = self.Ego_v
         self.hololens_message.advisory_spd = self.advisory_spd
 
