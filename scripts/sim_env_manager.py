@@ -28,8 +28,7 @@ class CMI_traffic_sim:
         self.traffic_alon = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_v = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_omega = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_brake_status = np.zeros(
-            max_num_vehicles, dtype=bool).tolist()
+        self.traffic_brake_status = np.zeros(max_num_vehicles, dtype=bool).tolist()
         self.traffic_num_vehicles = num_vehicles
         self.traffic_Sv_id = np.zeros(max_num_vehicles, dtype=int).tolist()
         self.traffic_info_msg = traffic_info()
@@ -120,9 +119,10 @@ class CMI_traffic_sim:
             self.vehicle_traj_seq_msg.front_v[i] = v[i]
             self.vehicle_traj_seq_msg.front_s[i] = s[i]
 
-    def construct_traffic_sim_info_msg(self):
+    def construct_traffic_sim_info_msg(self, sim_t):
         self.traffic_info_msg.serial = self.serial_id
         self.traffic_info_msg.num_SVs_x = self.traffic_num_vehicles
+        self.traffic_info_msg.sim_T = sim_t
         self.traffic_info_msg.virtual_vehicle_id = self.traffic_Sv_id
         self.traffic_info_msg.S_v_s = self.traffic_s
         self.traffic_info_msg.S_v_l = self.traffic_l
@@ -286,11 +286,30 @@ class road_reader:
         return d, E_s_yaw, v_s, v_l
 
     def find_speed_profile_information(self, sim_t):
+        # Locate the index of front vehicle's distance
+        
         record_t = np.array(self.t)
         t_id = np.argmin(np.abs(record_t - sim_t))
         dist_t = self.dist[t_id]
         speed_t = self.speed[t_id]
         acc_t = self.acc[t_id]
+
+        return speed_t, dist_t, acc_t
+    
+    def find_front_vehicle_predicted_state(self, front_s, dt):
+        # Locate the index of front vehicle's distance
+        front_s_ref = np.array(self.dist)
+        t_id = np.argmin(np.abs(front_s_ref - front_s))
+        
+        # Find the time id of future states
+        t_ref = np.array(self.t)
+        t_future = self.t[t_id] + dt
+        t_future_id = np.argmin(np.abs(t_ref - t_future))
+        
+        # Return the distance, speed and acceleration at future time step
+        dist_t = self.dist[t_future_id]
+        speed_t = self.speed[t_future_id]
+        acc_t = self.acc[t_future_id]
 
         return speed_t, dist_t, acc_t
 

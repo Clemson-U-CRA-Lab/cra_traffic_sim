@@ -1,4 +1,5 @@
 uint64 serial # serial id from virtual traffic simulation
+float64 sim_T # Simulation duration
 
 int32 num_SVs_x # Number of traffic vehicles in the simulation
 int32[12] virtual_vehicle_id # ID of traffic vehicles
