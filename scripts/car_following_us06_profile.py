@@ -94,14 +94,13 @@ def main_single_lane_following():
                 if traffic_manager.sim_start:
                     # Update simulation time
                     sim_t += Dt
-                    spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(
-                        sim_t=sim_t)
+                    spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
 
                     # Find the states for next few time steps
                     for i in range(20):
                         sim_dt = i
                         v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(
-                            front_s=traffic_manager.traffic_s[i] - (s_ego_frenet + 12), dt=sim_dt)
+                            front_s=traffic_manager.traffic_s[0] - s_ego_frenet - 12, dt=sim_dt)
                         front_s_t[i] = s_t + s_ego_frenet + 12
                         front_v_t[i] = v_t
                         front_a_t[i] = a_t
@@ -132,14 +131,11 @@ def main_single_lane_following():
                         virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
                         virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
                         # Transfer to right hand coordinate
-                        virtual_traffic_sim_info_manager.S_v_y[i] = - \
-                            local_traffic_vehicle_poses[1]
+                        virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1]
                         virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
                         # Transfer to right hand coordinate
-                        virtual_traffic_sim_info_manager.S_v_yaw[i] = - \
-                            local_traffic_vehicle_poses[3]
-                        virtual_traffic_sim_info_manager.S_v_pitch[i] = - \
-                            local_traffic_vehicle_poses[4]
+                        virtual_traffic_sim_info_manager.S_v_yaw[i] = - local_traffic_vehicle_poses[3]
+                        virtual_traffic_sim_info_manager.S_v_pitch[i] = - local_traffic_vehicle_poses[4]
 
                         # Update virtual traffic braking status
                         if traffic_manager.traffic_alon[i] <= 0:
@@ -162,11 +158,15 @@ def main_single_lane_following():
             traffic_manager.publish_traffic_sim_info()
             traffic_manager.publish_vehicle_traj()
 
-            rate.sleep()
+            
         except IndexError:
+            print('Index error detected.')
             continue
         except RuntimeError:
+            print('Runtime error detected.')
             continue
+
+        rate.sleep()
 
 
 if __name__ == "__main__":
