@@ -133,7 +133,6 @@ def main_lane_change_two_lanes():
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()
             
             rate.sleep()
-            rate.sleep()
         except IndexError:
             continue
         except RuntimeError:
