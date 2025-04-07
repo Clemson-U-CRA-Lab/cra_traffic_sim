@@ -29,11 +29,9 @@ def main_single_lane_following():
         closed_loop = False
 
     map_1_filename = rospy.get_param("/map_1")
-    map_2_filename = rospy.get_param("/map_2")
     spd_filename = rospy.get_param("/spd_map")
 
     map_1_file = os.path.join(parent_dir, "maps", map_1_filename)
-    map_2_file = os.path.join(parent_dir, "maps", map_2_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
 
     rospy.init_node("CRA_Digital_Twin_Traffic")
