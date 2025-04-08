@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- <param name="map_1" value="itic_dir0_lane1.csv"/>
+    <param name="map_2" value="itic_dir0_lane2.csv"/>
+    <param name="spd_map_1" value="ITIC_Lane_Change_Modeling_StartLane.csv"/>
+    <param name="spd_map_2" value="ITIC_Lane_Change_Modeling_EndLane.csv"/>
+    <param name="track_style" value="Rally"/> -->
+    <param name="runDirection" value="0"/>
+    <node pkg="cra_traffic_sim" type="anl_planner_tracker_lowlevel_path_debug.py" name="highlevel_tracker" output="screen"/>
+</launch>
