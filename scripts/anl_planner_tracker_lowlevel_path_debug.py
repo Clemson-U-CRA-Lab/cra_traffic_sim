@@ -128,7 +128,7 @@ class anl_planner_listener:
         # Store lane change trajectory
         if lane_change_needed:
             self.real_time_planner_listener = False
-            print('Lane change needed at s = ' + str(self.ego_s) + ' m. with horizon length of ' + str(len_lane_change_det))
+            print('Lane change needed at s = ' + str(self.ego_s) + ' m with horizon length of ' + str(len_lane_change_det))
             self.lane_change_trajectory_storage()
     
     def lane_change_end_checker(self):
