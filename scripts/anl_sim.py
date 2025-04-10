@@ -39,16 +39,16 @@ class anl_sim_env:
         self.gamma = gamma
         self.LaneWidth = LaneWidth
         
-        self.control_sub = rospy.Subscriber('/control_target_cmd', control_target, self.control_sub_callback)
+        self.control_sub = rospy.Subscriber('/control_target_cmd_debug', control_target, self.control_sub_callback)
         self.odom_pub = rospy.Publisher('/odom', Odometry, queue_size=1)
             
-    def step_forward(self):
-        self.ego_s = self.ego_s + self.ego_sdot * self.dt
-        self.ego_l = self.ego_l + self.ego_ldot * self.dt
+    def step_forward(self, dt):
+        self.ego_s = self.ego_s + self.ego_sdot * dt
+        self.ego_l = self.ego_l + self.ego_ldot * dt
         self.ego_ldot = self.ego_v * math.sin(self.ego_s_yaw)
         self.ego_sdot = self.ego_v * math.cos(self.ego_s_yaw)
-        self.ego_v = self.ego_v + self.acc * self.dt
-        self.ego_s_yaw = self.ego_s_yaw + self.ego_v * math.tan(self.steering) / self.L * self.dt
+        self.ego_v = self.ego_v + self.acc * dt
+        self.ego_s_yaw = self.ego_s_yaw + self.ego_v * math.tan(self.steering) / self.L * dt
         
         self.frenet_to_cartesian_coordinate_transform()
 
@@ -65,6 +65,8 @@ class anl_sim_env:
         odom_msg.twist.twist.angular.y = self.ego_ldot
         odom_msg.twist.twist.linear.z = self.ego_s_yaw
         odom_msg.twist.twist.angular.z = self.ego_yaw
+        odom_msg.twist.twist.linear.x = self.ego_v * math.cos(self.ego_yaw)
+        odom_msg.twist.twist.linear.y = self.ego_v * math.sin(self.ego_yaw)
         odom_msg.pose.pose.position.x = self.ego_x
         odom_msg.pose.pose.position.y = self.ego_y
         odom_msg.pose.pose.orientation.x = self.acc
@@ -111,17 +113,19 @@ if __name__ == "__main__":
         
     # Initialize ros node
     rospy.init_node('anl_sim')
-    anl_sim = anl_sim_env(time_interval=0.1, wheelbase=4.9, x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.7)
+    anl_sim = anl_sim_env(time_interval=0.1, wheelbase=4.0, x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.7)
     rate = rospy.Rate(10)
     
     # Message parameters
     msg_id = 0
     start_t = time.time()
+    sim_t = 0
 
     while not rospy.is_shutdown():
+        dt = time.time() - start_t - sim_t
         sim_t = time.time() - start_t
         try:
-            anl_sim.step_forward()
+            anl_sim.step_forward(dt=dt)
             anl_sim.pub_odom()
             rate.sleep()
         except IndexError:
