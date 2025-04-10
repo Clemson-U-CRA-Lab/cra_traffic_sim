@@ -112,7 +112,7 @@ class anl_planner_listener:
         self.traj_y = y[1:]
         self.traj_yaw = theta
         self.traj_s_store = tuple(s_t)
-        self.lane_change_end_s = s_t[lane_change_end_ID + 2]
+        self.lane_change_end_s = s_t[lane_change_end_ID + 5]
         
         return s_t
     
@@ -122,19 +122,19 @@ class anl_planner_listener:
         lane_change_cmd[np.where(lane_change_cmd==0)] = 1
         
         # Add sliding windows of lane change determinator
-        len_lane_change_det = round(np.clip(3 + 0.35 * self.ego_v, 3, 10))
+        len_lane_change_det = round(np.clip(3 + 0.35 * self.ego_v, 3, 5))
         lane_change_needed = (np.std(lane_change_cmd[0: len_lane_change_det]) > 0.25)
         
         # Store lane change trajectory
         if lane_change_needed:
             self.real_time_planner_listener = False
-            print('Lane change needed at s = ' + str(self.ego_s) + ' m with horizon length of ' + str(len_lane_change_det))
             self.lane_change_trajectory_storage()
+            print('Lane change needed at s = ' + str(self.ego_s) + ' m. Lane change ends at ' + str(self.lane_change_end_s) + 'm.')
     
     def lane_change_end_checker(self):
         # Measure the distance between lane change end point
         dist_to_end = np.abs(self.ego_s - self.lane_change_end_s)
-        
+        print('Distance to end lane is: ' + str(round(dist_to_end, 2)) + 'm.')
         # Release lane change trajectory
         if not self.real_time_planner_listener and dist_to_end < 0.25:
             print('Lane change ended at s = ' + str(self.ego_s) + ' m.')
@@ -158,15 +158,15 @@ class anl_planner_listener:
 if __name__ == "__main__":
     # Initialize ros node
     rospy.init_node('highlevel_tracker_gen_path_debug')
-    mpc_msg_publisher = rospy.Publisher('/lowlevel_mpc_reference_debug', mpc_pose_reference, queue_size=2)
-    dir_msg_publisher = rospy.Publisher('/runDirection_debug', Int8, queue_size=2)
-    lowlevel_heartbeat_publisher = rospy.Publisher('/low_level_heartbeat_debug', Int8, queue_size=2)
+    mpc_msg_publisher = rospy.Publisher('/lowlevel_mpc_reference', mpc_pose_reference, queue_size=2)
+    dir_msg_publisher = rospy.Publisher('/runDirection', Int8, queue_size=2)
+    lowlevel_heartbeat_publisher = rospy.Publisher('/low_level_heartbeat', Int8, queue_size=2)
     rate = rospy.Rate(100)
     highlevel_msg_manager = anl_planner_listener(max_num_vehicles=30)
     
     # Define map origins
     run_direction = rospy.get_param("/runDirection")
-    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_itic.csv")
+    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_long_itic.csv")
     file = open(endpoint_file_path)
     lanes_xy = np.float_(list(csv.reader(file,delimiter=",")))
     file.close()
