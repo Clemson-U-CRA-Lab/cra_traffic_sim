@@ -30,6 +30,7 @@ def main_single_lane_following():
 
     map_1_filename = rospy.get_param("/map_1")
     spd_filename = rospy.get_param("/spd_map")
+    pv_dt = float(rospy.get_param("/pv_states_dt"))
 
     map_1_file = os.path.join(parent_dir, "maps", map_1_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
@@ -75,9 +76,9 @@ def main_single_lane_following():
                 s_ego_frenet)
 
             # Initialize future states sequence
-            front_s_t = [0.0] * 20
-            front_v_t = [0.0] * 20
-            front_a_t = [0.0] * 20
+            front_s_t = [0.0] * 40
+            front_v_t = [0.0] * 40
+            front_a_t = [0.0] * 40
 
             # Initialize the traffic simulation
             if (sim_t < 0.2 and traffic_manager.sim_start):
@@ -96,7 +97,7 @@ def main_single_lane_following():
 
                     # Find the states for next few time steps
                     for i in range(20):
-                        sim_dt = i
+                        sim_dt = i * pv_dt
                         v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(
                             front_s=traffic_manager.traffic_s[0] - s_ego_frenet - 12, dt=sim_dt)
                         front_s_t[i] = s_t + s_ego_frenet + 12
