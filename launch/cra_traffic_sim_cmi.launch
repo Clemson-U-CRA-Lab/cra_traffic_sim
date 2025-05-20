@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <launch>
+    <arg name="pv_speed_profile" default="US06_CMI_Urban_speed_profile.csv" />
+
     <param name="map_1" value="CMI_outerloop_mach_e.csv"/>
     <param name="map_2" value="CMI_outerloop_mach_e_wider_lane.csv"/>
-    <!-- <param name="spd_map" value="US06_CMI_Urban_speed_profile.csv"/> -->
-    <param name="spd_map" value="FTPcol_sec1_spd_profile.csv"/>
-    <!-- <param name="spd_map" value="FTPcol_sec2_spd_profile.csv"/> -->
+    <param name="spd_map" value="$(arg pv_speed_profile)"/>
     <param name="num_vehicles" value="1"/>
     <param name="pv_states_dt" value="0.5"/>
     <param name="track_style" value="GrandPrix"/>
     <node pkg="cra_traffic_sim" type="car_following_single_lane.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
     <!-- <node pkg="human_friendly_speed_advisory" type="eco_mpc_car_following.py" name="eco_car_following_advisory_speed" output="screen" /> -->
-    <node pkg="joy" type="joy_node" name="joy_node" output="screen" ></node>
+    <node pkg="joy" type="joy_node" name="joy_node" output="screen" />
 </launch>
