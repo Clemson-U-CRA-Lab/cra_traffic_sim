@@ -30,6 +30,7 @@ class anl_sim_env:
         self.ego_sdot = 0.0
         self.steering = 0.0
         self.acc = 0.0
+        self.acc_tgt = 0.0
         self.ego_v = 0.0
         self.L = wheelbase
         
@@ -52,6 +53,7 @@ class anl_sim_env:
         self.frenet_to_cartesian_coordinate_transform()
     
     def step_forward_kinematic_bicycle(self, dt):
+        self.acc = self.acc + 0.5 * (self.acc_tgt - self.acc)
         self.ego_s = self.ego_s + self.ego_v * math.cos(self.ego_s_yaw)* dt
         self.ego_l = self.ego_l + (self.ego_v * math.sin(self.ego_s_yaw) / self.LaneWidth) * dt
         self.ego_s_yaw = self.ego_s_yaw + (self.ego_v * math.tan(self.steering) / (self.L * self.LaneWidth)) * dt
@@ -67,7 +69,7 @@ class anl_sim_env:
         
     def step_forward_kinematic_bicycle_v2(self, dt):
         self. frenet_to_cartesian_coordinate_transform()
-        
+        self.acc = self.acc + 0.5 * (self.acc_tgt - self.acc)
         self.ego_x = self.ego_x + self.ego_v * math.cos(self.ego_yaw)* dt
         self.ego_y = self.ego_y + (self.ego_v * math.sin(self.ego_yaw) / self.LaneWidth) * dt
         self.ego_yaw = self.ego_yaw + (self.ego_v * math.tan(self.steering) / (self.L)) * dt
@@ -79,7 +81,7 @@ class anl_sim_env:
         self.cartesian_to_frenet_coordinate_transform()
 
     def control_sub_callback(self, msg):
-        self.acc = msg.pedal_command
+        self.acc_tgt = msg.pedal_command
         curv = msg.steering_command
         steering_cmd = math.atan(self.L * curv)
         self.steering = self.steering + 0.5 * (steering_cmd - self.steering)
@@ -125,7 +127,7 @@ class anl_sim_env:
 if __name__ == "__main__":
     # Define map origins
     run_direction = rospy.get_param("/runDirection")
-    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_long_itic.csv")
+    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_itic.csv")
     file = open(endpoint_file_path)
     lanes_xy = np.float_(list(csv.reader(file,delimiter=",")))
     file.close()
@@ -148,8 +150,8 @@ if __name__ == "__main__":
         
     # Initialize ros node
     rospy.init_node('anl_sim')
-    anl_sim = anl_sim_env(wheelbase=4.0, x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.7)
-    rate = rospy.Rate(50)
+    anl_sim = anl_sim_env(wheelbase=5.0, x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.7)
+    rate = rospy.Rate(100)
     
     # Message parameters
     msg_id = 0
@@ -160,7 +162,7 @@ if __name__ == "__main__":
         dt = time.time() - start_t - sim_t
         sim_t = time.time() - start_t
         try:
-            print('Ego V: ' + str(round(anl_sim.ego_v, 2)) + ' m/s.')
+            print('Ego V: ' + str(round(anl_sim.ego_v, 2)) + ' m/s.' + ' Ego Acc: ' + str(round(anl_sim.acc, 3)) + ' m/s^2.')
             anl_sim.step_forward_kinematic_bicycle(dt=dt)
             anl_sim.pub_odom()
             rate.sleep()
