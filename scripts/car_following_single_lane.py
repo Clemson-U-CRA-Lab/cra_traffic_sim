@@ -34,6 +34,7 @@ def main_single_lane_following():
 
     map_1_file = os.path.join(parent_dir, "maps", map_1_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
+    print('PV speed pfofile is: ' , spd_file)
 
     rospy.init_node("CRA_Digital_Twin_Traffic")
     rate = rospy.Rate(200)
@@ -100,9 +101,9 @@ def main_single_lane_following():
                         sim_dt = i * pv_dt
                         v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(
                             front_s=traffic_manager.traffic_s[0] - s_ego_frenet - 12, dt=sim_dt)
-                        front_s_t[i] = s_t + s_ego_frenet + 12
-                        front_v_t[i] = v_t
-                        front_a_t[i] = a_t
+                        front_s_t[i] = round(s_t + s_ego_frenet + 12, 3)
+                        front_v_t[i] = round(v_t, 3)
+                        front_a_t[i] = round(a_t, 3)
 
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
@@ -160,10 +161,8 @@ def main_single_lane_following():
             
         except IndexError:
             print('Index error detected.')
-            continue
         except RuntimeError:
             print('Runtime error detected.')
-            continue
 
         rate.sleep()
 

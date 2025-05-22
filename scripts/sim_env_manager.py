@@ -77,6 +77,7 @@ class CMI_traffic_sim:
         self.ego_roll = msg.data[16]
         self.ego_pitch = msg.data[17]
         self.ego_v = msg.data[15]
+        self.ego_acc = msg.data[6]
         self.ego_v_north = msg.data[13]
         self.ego_v_east = msg.data[14]
         self.ego_pose_ref = np.array(
@@ -136,6 +137,7 @@ class CMI_traffic_sim:
         self.traffic_info_msg.E_v_sv = self.ego_sv
         self.traffic_info_msg.E_v_lv = self.ego_lv
         self.traffic_info_msg.E_v_yaw = self.ego_yaw_s
+        self.traffic_info_msg.E_v_acc = self.ego_acc
 
     def publish_traffic_sim_info(self):
         self.pub_traffic_info.publish(self.traffic_info_msg)
