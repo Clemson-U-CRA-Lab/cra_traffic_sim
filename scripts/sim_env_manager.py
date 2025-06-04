@@ -16,7 +16,28 @@ import numpy as np
 import math
 import os
 from utils import *
-
+class CRA_vehicle():
+    def __init__(self, veh_ID, time_interval, wheelbase):
+        self.ID = veh_ID
+        self.dt = time_interval
+        self.L = wheelbase
+        
+        self.tgt_steering = 0.0
+        self.tgt_acc = 0.0
+        self.steering = 0.0
+        self.v = 0.0
+        self.acc = 0.0
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
+        self.yaw = 0.0
+        self.pitch = 0.0
+    
+    def state_update_kinematic_bicycle_model(self):
+        self.x = self.x + math.cos(self.yaw) * self.v * self.dt
+        self.y = self.y + math.sin(self.yaw) * self.v * self.dt
+        self.v = self.v + self.acc * self.dt
+        self.yaw = self.yaw + self.v * math.tan(self.steering) / self.L *  self.dt
 
 class CMI_traffic_sim:
     def __init__(self, max_num_vehicles, num_vehicles):
@@ -219,7 +240,6 @@ class road_reader:
         return [traffic_x, traffic_y, traffic_z, traffic_yaw, traffic_pitch]
 
     def find_ego_vehicle_distance_reference(self, ego_poses):
-
         cmi_traj_coordinate = np.array([self.x, self.y, self.z])
         dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
         min_ref_coordinate_id = np.argmin(dist_to_map)
@@ -289,7 +309,6 @@ class road_reader:
 
     def find_speed_profile_information(self, sim_t):
         # Locate the index of front vehicle's distance
-        
         record_t = np.array(self.t)
         t_id = np.argmin(np.abs(record_t - sim_t))
         dist_t = self.dist[t_id]

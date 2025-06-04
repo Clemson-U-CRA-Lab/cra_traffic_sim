@@ -61,8 +61,8 @@ def main_lane_change_two_lanes():
 
     while not rospy.is_shutdown():
         try:
-            delta_t = time.time() - start_t - sim_t
             sim_t = time.time() - start_t
+            
             # Add ego vehicle's information to the hololens sender node
             virtual_traffic_sim_info_manager.serial = msg_counter
             virtual_traffic_sim_info_manager.Ego_acc = traffic_manager.ego_acc
@@ -93,7 +93,7 @@ def main_lane_change_two_lanes():
                     
                     if traffic_vehicle_lane_number == 0:
                         traffic_vehicle_poses = traffic_map_manager_0.find_traffic_vehicle_poses(traffic_manager.traffic_s[i][0])
-
+                        
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                          traffic_manager.ego_z, traffic_manager.ego_yaw,
                                          traffic_manager.ego_pitch]
