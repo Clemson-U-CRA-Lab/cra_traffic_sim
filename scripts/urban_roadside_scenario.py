@@ -41,9 +41,9 @@ def main_urban_roadside_cut_in_scenario():
     rospy.init_node("CRA_urban_roadside_traffic_scene")
     rate = rospy.Rate(100)
 
-    traffic_manager = CMI_traffic_sim(num_vehicles=num_Sv)
+    traffic_manager = CMI_traffic_sim(num_vehicles=num_Sv, max_num_vehicles=12)
     virtual_traffic_sim_info_manager = hololens_message_manager(
-        num_vehicles=num_Sv, max_num_vehicles=12)
+        num_vehicles=num_Sv, num_traffic_lights=0, max_num_vehicles=12, max_num_traffic_lights=10)
 
     traffic_map_manager_0 = road_reader(
         map_filename=map_0_file, speed_profile_filename=spd_0_file, closed_track=closed_loop)
@@ -81,7 +81,7 @@ def main_urban_roadside_cut_in_scenario():
                                                                                                       [traffic_manager.ego_y],
                                                                                                       [traffic_manager.ego_z]]))
                 for i in range(num_Sv):
-                    traffic_manager.traffic_initialization(s_ego=s_ego_init_0, ds = 15 * (i + 1), line_number=0, vehicle_id=i, vehicle_id_in_lane=i)
+                    traffic_manager.traffic_initialization(s_ego=s_ego_init_0, ds = 10, line_number=0, vehicle_id=i, vehicle_id_in_lane=i)
                     [veh_x, veh_y, veh_z, veh_yaw, veh_pitch] = traffic_map_manager_0.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                     traffic_manager.global_vehicle_update(veh_ID=i, x=veh_x, y=veh_y, z=veh_z, yaw=veh_yaw, pitch=veh_pitch)
                 
@@ -89,21 +89,43 @@ def main_urban_roadside_cut_in_scenario():
             else:
                 msg_counter += 1
                 
+                # Update ego vehicle poses
+                ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                     traffic_manager.ego_z, traffic_manager.ego_yaw,
+                                     traffic_manager.ego_pitch]
+                
                 # Find virtual traffic global poses
                 for i in range(num_Sv):
-                    # Check the vehicle id and its lane number
-                    traffic_vehicle_lane_number = traffic_manager.traffic_l[i]
+                    # Update traffic vehicle poses
+                    traffic_vehicle_poses = [traffic_manager.traffic_x[i], traffic_manager.traffic_y[i], 
+                                             traffic_manager.traffic_z[i], traffic_manager.traffic_yaw[i],
+                                             traffic_manager.traffic_pitch[i]]
                     
-                    if traffic_vehicle_lane_number == 0:
-                        traffic_vehicle_poses = traffic_map_manager_0.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
-                        
-                    ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
-                                         traffic_manager.ego_z, traffic_manager.ego_yaw,
-                                         traffic_manager.ego_pitch]
+                    local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     
+                    # Update virtual traffic simulation information
+                    virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
+                    virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
+                    # Transfer to right hand coordinate
+                    virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1]
+                    virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
+                    virtual_traffic_sim_info_manager.S_v_yaw[i] = - local_traffic_vehicle_poses[3]
+                    virtual_traffic_sim_info_manager.S_v_pitch[i] = - local_traffic_vehicle_poses[4]
+                    
+                    # Update virtual traffic braking status
+                    if traffic_manager.traffic_alon[i] <= 0:
+                        virtual_traffic_sim_info_manager.S_v_brake_status[i] = True
+                    else:
+                        virtual_traffic_sim_info_manager.S_v_brake_status[i] = False
+                    
+                    virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
+                    virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
+
             # Publish the traffic information
             virtual_traffic_sim_info_manager.construct_hololens_info_msg()
+            traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()
+            traffic_manager.publish_traffic_sim_info()
             
             rate.sleep()
         except IndexError:

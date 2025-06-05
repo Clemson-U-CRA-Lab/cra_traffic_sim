@@ -133,7 +133,6 @@ def main_single_lane_following():
                         # Transfer to right hand coordinate
                         virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1]
                         virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
-                        # Transfer to right hand coordinate
                         virtual_traffic_sim_info_manager.S_v_yaw[i] = - local_traffic_vehicle_poses[3]
                         virtual_traffic_sim_info_manager.S_v_pitch[i] = - local_traffic_vehicle_poses[4]
 
