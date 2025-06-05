@@ -16,36 +16,19 @@ import numpy as np
 import math
 import os
 from utils import *
-class CRA_vehicle():
-    def __init__(self, veh_ID, time_interval, wheelbase):
-        self.ID = veh_ID
-        self.dt = time_interval
-        self.L = wheelbase
-        
-        self.tgt_steering = 0.0
-        self.tgt_acc = 0.0
-        self.steering = 0.0
-        self.v = 0.0
-        self.acc = 0.0
-        self.x = 0.0
-        self.y = 0.0
-        self.z = 0.0
-        self.yaw = 0.0
-        self.pitch = 0.0
-    
-    def state_update_kinematic_bicycle_model(self):
-        self.x = self.x + math.cos(self.yaw) * self.v * self.dt
-        self.y = self.y + math.sin(self.yaw) * self.v * self.dt
-        self.v = self.v + self.acc * self.dt
-        self.yaw = self.yaw + self.v * math.tan(self.steering) / self.L *  self.dt
 
 class CMI_traffic_sim:
     def __init__(self, max_num_vehicles, num_vehicles):
         self.serial_id = 0
         self.traffic_s = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_l = np.zeros(max_num_vehicles, dtype=float).tolist()
+        
+        self.traffic_x = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_y = np.zeros(max_num_vehicles, dtype=float).tolist()
+        self.traffic_z = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_yaw = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_pitch = np.zeros(max_num_vehicles, dtype=float).tolist()
+        
         self.traffic_alon = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_v = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_omega = np.zeros(max_num_vehicles, dtype=float).tolist()
@@ -108,6 +91,13 @@ class CMI_traffic_sim:
         self.traffic_s[vehicle_id] = s_ego + ds * (vehicle_id_in_lane + 1)
         self.traffic_Sv_id[vehicle_id] = vehicle_id
         self.traffic_l[vehicle_id] = line_number
+    
+    def global_vehicle_update(self, veh_ID, x, y, z, yaw, pitch):
+        self.traffic_x[veh_ID] = x
+        self.traffic_y[veh_ID] = y
+        self.traffic_z[veh_ID] = z
+        self.traffic_yaw[veh_ID] = yaw
+        self.traffic_pitch[veh_ID] = pitch
 
     def traffic_update(self, dt, a, v_tgt, vehicle_id):
         # Update velocity to match speed profile
@@ -142,6 +132,7 @@ class CMI_traffic_sim:
             self.vehicle_traj_seq_msg.front_s[i] = s[i]
 
     def construct_traffic_sim_info_msg(self, sim_t):
+        self.traffic_info_msg = traffic_info()
         self.traffic_info_msg.serial = self.serial_id
         self.traffic_info_msg.num_SVs_x = self.traffic_num_vehicles
         self.traffic_info_msg.sim_T = sim_t
