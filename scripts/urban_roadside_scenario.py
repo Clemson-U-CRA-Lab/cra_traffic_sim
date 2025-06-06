@@ -58,9 +58,13 @@ def main_urban_roadside_cut_in_scenario():
     msg_counter = 0
     start_t = time.time()
     sim_t = 0
+    
+    exit_vehicle_id = 3
+    spd_tgt = 5.0
 
     while not rospy.is_shutdown():
         try:
+            dt = time.time() - start_t - sim_t
             sim_t = time.time() - start_t
             
             # Add ego vehicle's information to the hololens sender node
@@ -84,7 +88,8 @@ def main_urban_roadside_cut_in_scenario():
                     traffic_manager.traffic_initialization(s_ego=s_ego_init_0, ds = 10, line_number=0, vehicle_id=i, vehicle_id_in_lane=i)
                     [veh_x, veh_y, veh_z, veh_yaw, veh_pitch] = traffic_map_manager_0.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                     traffic_manager.global_vehicle_update(veh_ID=i, x=veh_x, y=veh_y, z=veh_z, yaw=veh_yaw, pitch=veh_pitch)
-                
+                    if i == exit_vehicle_id:
+                        exit_veh_control = stanley_vehicle_controller(x_init=veh_x, y_init=veh_y, z_init=veh_z, yaw_init=veh_yaw, pitch_init=veh_pitch)
                 continue
             else:
                 msg_counter += 1
@@ -96,10 +101,30 @@ def main_urban_roadside_cut_in_scenario():
                 
                 # Find virtual traffic global poses
                 for i in range(num_Sv):
-                    # Update traffic vehicle poses
-                    traffic_vehicle_poses = [traffic_manager.traffic_x[i], traffic_manager.traffic_y[i], 
-                                             traffic_manager.traffic_z[i], traffic_manager.traffic_yaw[i],
-                                             traffic_manager.traffic_pitch[i]]
+                    if i == exit_vehicle_id:
+                        # Find pure pursuit goal poses
+                        traffic_vehicle_pose_ref = [exit_veh_control.x, exit_veh_control.y, 
+                                                    exit_veh_control.z, exit_veh_control.yaw, 
+                                                    exit_veh_control.pitch]
+                        traffic_vehicle_ref_s, _, max_map_s = traffic_map_manager_1.find_ego_vehicle_distance_reference(traffic_vehicle_pose_ref)
+                        traffic_vehicle_ref_s += 10
+                        
+                        if traffic_vehicle_ref_s > max_map_s:
+                            traffic_vehicle_ref_s -= max_map_s
+                        
+                        traffic_vehicle_goal_pose = traffic_map_manager_1.find_traffic_vehicle_poses(dist_travelled=traffic_vehicle_ref_s)
+                        exit_veh_control.pure_pursuit_controller(traffic_vehicle_goal_pose)
+                        acc = 2 * (spd_tgt - exit_veh_control.v)
+                        z = (traffic_vehicle_goal_pose[2] + exit_veh_control.z)
+                        pitch = (traffic_vehicle_goal_pose[4] + exit_veh_control.pitch)
+                        exit_veh_control.update_vehicle_state(acc=acc, z=z, pitch=pitch, dt=dt)
+                        traffic_vehicle_poses = exit_veh_control.get_traffic_pose()
+                        
+                    else:
+                        # Update traffic vehicle poses
+                        traffic_vehicle_poses = [traffic_manager.traffic_x[i], traffic_manager.traffic_y[i], 
+                                                 traffic_manager.traffic_z[i], traffic_manager.traffic_yaw[i],
+                                                 traffic_manager.traffic_pitch[i]]
                     
                     local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     

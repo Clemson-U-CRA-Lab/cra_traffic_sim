@@ -16,7 +16,39 @@ import numpy as np
 import math
 import os
 from utils import *
-
+class stanley_vehicle_controller():
+    def __init__(self, x_init, y_init, z_init, yaw_init, pitch_init):
+        self.x = x_init
+        self.y = y_init
+        self.z = z_init
+        self.yaw = yaw_init
+        self.pitch = pitch_init
+        self.steering = 0.0
+        self.acc = 0.0
+        self.v = 0.0
+    
+    def update_vehicle_state(self, acc, z, pitch, dt):
+        self.x += self.v * math.cos(self.yaw) * dt
+        self.y += self.v * math.sin(self.yaw) * dt
+        self.yaw += self.v * math.tan(self.steering) / 6 * dt
+        self.v += self.acc * dt
+        self.z = z
+        self.pitch = pitch
+        self.acc = acc
+    
+    def pure_pursuit_controller(self, goal_pose):
+        ego_pose = [self.x, self.y, self.z, self.yaw, self.pitch]
+        
+        local_veh_pose = host_vehicle_coordinate_transformation(goal_pose, ego_pose)
+        
+        l = (local_veh_pose[0] ** 2 + local_veh_pose[1] ** 2) ** 0.5
+        r = l ** 2 / (2 * local_veh_pose[0])
+        
+        self.steering = np.clip(math.atan(6 / r), -0.5, 0.5)
+    
+    def get_traffic_pose(self):
+        return [self.x, self.y, self.z, self.yaw, self.pitch]
+    
 class CMI_traffic_sim:
     def __init__(self, max_num_vehicles, num_vehicles):
         self.serial_id = 0
@@ -235,6 +267,7 @@ class road_reader:
         dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
         min_ref_coordinate_id = np.argmin(dist_to_map)
         min_dist_to_map = np.min(dist_to_map)
+        s_max = np.max(self.s)
 
         if (self.grand_prix_style):
             next_id = (min_ref_coordinate_id + 1) % len(self.s)
@@ -259,7 +292,7 @@ class road_reader:
         w = dist_to_next / (dist_to_next + dist_to_prev)
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
 
-        return s_ref[0], min_dist_to_map
+        return s_ref[0], min_dist_to_map, s_max
 
     def find_ego_frenet_pose(self, ego_poses, ego_yaw, vy, vx):
         # Find closest point from map to the ego vehicle
