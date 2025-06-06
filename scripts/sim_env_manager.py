@@ -42,8 +42,7 @@ class stanley_vehicle_controller():
         local_veh_pose = host_vehicle_coordinate_transformation(goal_pose, ego_pose)
         
         l = (local_veh_pose[0] ** 2 + local_veh_pose[1] ** 2) ** 0.5
-        r = l ** 2 / (2 * local_veh_pose[0])
-        
+        r = l ** 2 / (2 * local_veh_pose[1])
         self.steering = np.clip(math.atan(6 / r), -0.5, 0.5)
     
     def get_traffic_pose(self):
@@ -291,7 +290,6 @@ class road_reader:
 
         w = dist_to_next / (dist_to_next + dist_to_prev)
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
-
         return s_ref[0], min_dist_to_map, s_max
 
     def find_ego_frenet_pose(self, ego_poses, ego_yaw, vy, vx):

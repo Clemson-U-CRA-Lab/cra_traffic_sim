@@ -59,7 +59,7 @@ def main_urban_roadside_cut_in_scenario():
     start_t = time.time()
     sim_t = 0
     
-    exit_vehicle_id = 3
+    exit_vehicle_id = 2
     spd_tgt = 5.0
 
     while not rospy.is_shutdown():
@@ -81,7 +81,7 @@ def main_urban_roadside_cut_in_scenario():
             if sim_t < 0.1:
                 # Find initial distance of two lanes
                 # Lane 0
-                s_ego_init_0, _ = traffic_map_manager_0.find_ego_vehicle_distance_reference(np.array([[traffic_manager.ego_x],
+                s_ego_init_0, _, _ = traffic_map_manager_0.find_ego_vehicle_distance_reference(np.array([[traffic_manager.ego_x],
                                                                                                       [traffic_manager.ego_y],
                                                                                                       [traffic_manager.ego_z]]))
                 for i in range(num_Sv):
@@ -103,30 +103,35 @@ def main_urban_roadside_cut_in_scenario():
                 for i in range(num_Sv):
                     if i == exit_vehicle_id:
                         # Find pure pursuit goal poses
-                        traffic_vehicle_pose_ref = [exit_veh_control.x, exit_veh_control.y, 
-                                                    exit_veh_control.z, exit_veh_control.yaw, 
-                                                    exit_veh_control.pitch]
+                        traffic_vehicle_pose_ref = np.array([[exit_veh_control.x], 
+                                                             [exit_veh_control.y], 
+                                                             [exit_veh_control.z]])
                         traffic_vehicle_ref_s, _, max_map_s = traffic_map_manager_1.find_ego_vehicle_distance_reference(traffic_vehicle_pose_ref)
-                        traffic_vehicle_ref_s += 10
+                        traffic_vehicle_ref_s_0,_, _, = traffic_map_manager_0.find_ego_vehicle_distance_reference(traffic_vehicle_pose_ref)
+
+                        traffic_vehicle_ref_s += 3
                         
                         if traffic_vehicle_ref_s > max_map_s:
                             traffic_vehicle_ref_s -= max_map_s
-                        
                         traffic_vehicle_goal_pose = traffic_map_manager_1.find_traffic_vehicle_poses(dist_travelled=traffic_vehicle_ref_s)
+                        traffic_vehicle_pose_ref_0 = traffic_map_manager_0.find_traffic_vehicle_poses(dist_travelled=traffic_vehicle_ref_s_0)
                         exit_veh_control.pure_pursuit_controller(traffic_vehicle_goal_pose)
-                        acc = 2 * (spd_tgt - exit_veh_control.v)
-                        z = (traffic_vehicle_goal_pose[2] + exit_veh_control.z)
-                        pitch = (traffic_vehicle_goal_pose[4] + exit_veh_control.pitch)
+                        if sim_t > 12:
+                            acc = 2 * (spd_tgt - exit_veh_control.v)
+                        else:
+                            acc = 0.0
+                        z = traffic_vehicle_pose_ref_0[2]
+                        pitch = traffic_vehicle_pose_ref_0[4]
                         exit_veh_control.update_vehicle_state(acc=acc, z=z, pitch=pitch, dt=dt)
                         traffic_vehicle_poses = exit_veh_control.get_traffic_pose()
-                        
+                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     else:
                         # Update traffic vehicle poses
                         traffic_vehicle_poses = [traffic_manager.traffic_x[i], traffic_manager.traffic_y[i], 
                                                  traffic_manager.traffic_z[i], traffic_manager.traffic_yaw[i],
                                                  traffic_manager.traffic_pitch[i]]
                     
-                    local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
+                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     
                     # Update virtual traffic simulation information
                     virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
@@ -153,10 +158,10 @@ def main_urban_roadside_cut_in_scenario():
             traffic_manager.publish_traffic_sim_info()
             
             rate.sleep()
-        except IndexError:
-            continue
-        except RuntimeError:
-            continue
+        except IndexError as e:
+            print(e)
+        except RuntimeError as e:
+            print(e)
 
 
 if __name__ == "__main__":
