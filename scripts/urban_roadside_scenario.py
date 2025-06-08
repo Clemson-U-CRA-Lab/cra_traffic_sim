@@ -136,7 +136,10 @@ def main_urban_roadside_cut_in_scenario():
                         # OBJECTIVE TEST SCENARIOS FOR INTEGRATED VEHICLE-BASED SAFETY SYSTEMS
                         t_headway = (traffic_vehicle_ref_s - ego_vehicle_ref_s) / traffic_manager.ego_v
                         if t_headway <= 2 or exit_veh_control.v > 0.1:
-                            traffic_vehicle_acc = 2 * (spd_tgt - exit_veh_control.v)
+                            if traffic_vehicle_ref_s < 540:
+                                traffic_vehicle_acc = 2 * (spd_tgt - exit_veh_control.v)
+                            else:
+                                traffic_vehicle_acc = 2 * (0 - exit_veh_control.v)
                         else:
                             traffic_vehicle_acc = 0.0
                         
