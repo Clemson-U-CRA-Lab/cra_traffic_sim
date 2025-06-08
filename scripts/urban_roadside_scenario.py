@@ -60,7 +60,7 @@ def main_urban_roadside_cut_in_scenario():
     start_t = time.time()
     sim_t = 0
     
-    exit_vehicle_id = random.randint(1, 9)
+    exit_vehicle_id = random.randint(1, num_Sv-1)
     print('Vehicle ' + str(exit_vehicle_id) + ' will merge into ego driving lane later.')
     spd_tgt = 5.0
 
@@ -89,6 +89,13 @@ def main_urban_roadside_cut_in_scenario():
                 for i in range(num_Sv):
                     traffic_manager.traffic_initialization(s_ego=s_ego_init_0, ds = 10, line_number=0, vehicle_id=i, vehicle_id_in_lane=i)
                     [veh_x, veh_y, veh_z, veh_yaw, veh_pitch] = traffic_map_manager_0.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                    traffic_vehicle_pose_ref = np.array([[veh_x], 
+                                                         [veh_y], 
+                                                         [veh_z]])
+                    traffic_vehicle_ref_s, _, max_map_s = traffic_map_manager_1.find_ego_vehicle_distance_reference(traffic_vehicle_pose_ref)
+                    traffic_vehicle_goal_pose = traffic_map_manager_1.find_traffic_vehicle_poses(dist_travelled=traffic_vehicle_ref_s)
+                    veh_z = traffic_vehicle_goal_pose[2]
+                    veh_pitch = traffic_vehicle_goal_pose[4]
                     traffic_manager.global_vehicle_update(veh_ID=i, x=veh_x, y=veh_y, z=veh_z, yaw=veh_yaw, pitch=veh_pitch)
                     if i == exit_vehicle_id:
                         exit_veh_control = stanley_vehicle_controller(x_init=veh_x, y_init=veh_y, z_init=veh_z, yaw_init=veh_yaw, pitch_init=veh_pitch)
