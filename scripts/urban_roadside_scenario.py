@@ -7,6 +7,7 @@ from hololens_ros_communication.msg import hololens_info
 import time
 import numpy as np
 import math
+import random
 import os
 from sim_env_manager import *
 from utils import *
@@ -59,7 +60,8 @@ def main_urban_roadside_cut_in_scenario():
     start_t = time.time()
     sim_t = 0
     
-    exit_vehicle_id = 2
+    exit_vehicle_id = random.randint(1, 9)
+    print('Vehicle ' + str(exit_vehicle_id) + ' will merge into ego driving lane later.')
     spd_tgt = 5.0
 
     while not rospy.is_shutdown():
@@ -106,23 +108,32 @@ def main_urban_roadside_cut_in_scenario():
                         traffic_vehicle_pose_ref = np.array([[exit_veh_control.x], 
                                                              [exit_veh_control.y], 
                                                              [exit_veh_control.z]])
+                        ego_vehicle_pose_ref = np.array([[traffic_manager.ego_x],
+                                                         [traffic_manager.ego_y],
+                                                         [traffic_manager.ego_z]])
                         traffic_vehicle_ref_s, _, max_map_s = traffic_map_manager_1.find_ego_vehicle_distance_reference(traffic_vehicle_pose_ref)
                         traffic_vehicle_ref_s_0,_, _, = traffic_map_manager_0.find_ego_vehicle_distance_reference(traffic_vehicle_pose_ref)
-
-                        traffic_vehicle_ref_s += 3
+                        ego_vehicle_ref_s, _, _ = traffic_map_manager_1.find_ego_vehicle_distance_reference(ego_vehicle_pose_ref)
                         
-                        if traffic_vehicle_ref_s > max_map_s:
+                        traffic_vehicle_ref_s += 3 # Add pure pursuit look ahead distance
+                        
+                        if traffic_vehicle_ref_s > max_map_s: # Map distance correction
                             traffic_vehicle_ref_s -= max_map_s
                         traffic_vehicle_goal_pose = traffic_map_manager_1.find_traffic_vehicle_poses(dist_travelled=traffic_vehicle_ref_s)
                         traffic_vehicle_pose_ref_0 = traffic_map_manager_0.find_traffic_vehicle_poses(dist_travelled=traffic_vehicle_ref_s_0)
+                        traffic_vehicle_z = traffic_vehicle_pose_ref_0[2]
+                        traffic_vehicle_pitch = traffic_vehicle_pose_ref_0[4]
                         exit_veh_control.pure_pursuit_controller(traffic_vehicle_goal_pose)
-                        if sim_t > 12:
-                            acc = 2 * (spd_tgt - exit_veh_control.v)
+                        
+                        # Start cut in when time to headway smaller than 2 seconds according to NHTSA safety design notes:
+                        # OBJECTIVE TEST SCENARIOS FOR INTEGRATED VEHICLE-BASED SAFETY SYSTEMS
+                        t_headway = (traffic_vehicle_ref_s - ego_vehicle_ref_s) / traffic_manager.ego_v
+                        if t_headway <= 2 or exit_veh_control.v > 0.1:
+                            traffic_vehicle_acc = 2 * (spd_tgt - exit_veh_control.v)
                         else:
-                            acc = 0.0
-                        z = traffic_vehicle_pose_ref_0[2]
-                        pitch = traffic_vehicle_pose_ref_0[4]
-                        exit_veh_control.update_vehicle_state(acc=acc, z=z, pitch=pitch, dt=dt)
+                            traffic_vehicle_acc = 0.0
+                        
+                        exit_veh_control.update_vehicle_state(acc=traffic_vehicle_acc, z=traffic_vehicle_z, pitch=traffic_vehicle_pitch, dt=dt)
                         traffic_vehicle_poses = exit_veh_control.get_traffic_pose()
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     else:
@@ -130,7 +141,7 @@ def main_urban_roadside_cut_in_scenario():
                         traffic_vehicle_poses = [traffic_manager.traffic_x[i], traffic_manager.traffic_y[i], 
                                                  traffic_manager.traffic_z[i], traffic_manager.traffic_yaw[i],
                                                  traffic_manager.traffic_pitch[i]]
-                    
+
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     
                     # Update virtual traffic simulation information
