@@ -93,7 +93,7 @@ class CMI_traffic_sim:
         self.sub_lowlevel_bridge = rospy.Subscriber(
             '/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
         self.pub_traffic_info = rospy.Publisher(
-            '/traffic_sim_info', traffic_info, queue_size=1)
+            '/traffic_sim_info_mache', traffic_info, queue_size=1)
         self.sub_joy = rospy.Subscriber("/joy", Joy, self.joy_callback)
         self.pub_vehicle_traj_sequence = rospy.Publisher(
             '/front_v_traj_seq_v0', vehicle_traj_seq, queue_size=1)
@@ -122,6 +122,7 @@ class CMI_traffic_sim:
         self.traffic_s[vehicle_id] = s_ego + ds * (vehicle_id_in_lane + 1)
         self.traffic_Sv_id[vehicle_id] = vehicle_id
         self.traffic_l[vehicle_id] = line_number
+        self.traffic_brake_status[vehicle_id] = True
     
     def global_vehicle_update(self, veh_ID, x, y, z, yaw, pitch):
         self.traffic_x[veh_ID] = x
@@ -391,7 +392,7 @@ class hololens_message_manager():
         self.advisory_spd = 0.0
 
         self.pub_virtual_traffic_info = rospy.Publisher(
-            '/virtual_sim_info', hololens_info, queue_size=1)
+            '/virtual_sim_info_mache', hololens_info, queue_size=1)
 
     def construct_hololens_info_msg(self):
         self.hololens_message = hololens_info()

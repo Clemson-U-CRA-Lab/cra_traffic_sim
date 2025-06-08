@@ -91,11 +91,11 @@ def main_urban_roadside_cut_in_scenario():
                     [veh_x, veh_y, veh_z, veh_yaw, veh_pitch] = traffic_map_manager_0.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                     traffic_vehicle_pose_ref = np.array([[veh_x], 
                                                          [veh_y], 
-                                                         [veh_z]])
+                                                         [veh_z]]) # Find road refernce from ego line
                     traffic_vehicle_ref_s, _, max_map_s = traffic_map_manager_1.find_ego_vehicle_distance_reference(traffic_vehicle_pose_ref)
                     traffic_vehicle_goal_pose = traffic_map_manager_1.find_traffic_vehicle_poses(dist_travelled=traffic_vehicle_ref_s)
-                    veh_z = traffic_vehicle_goal_pose[2]
-                    veh_pitch = traffic_vehicle_goal_pose[4]
+                    veh_z = traffic_vehicle_goal_pose[2] # Use ego lane's vertial pose information
+                    veh_pitch = traffic_vehicle_goal_pose[4] # Use ego lane's pitch information
                     traffic_manager.global_vehicle_update(veh_ID=i, x=veh_x, y=veh_y, z=veh_z, yaw=veh_yaw, pitch=veh_pitch)
                     if i == exit_vehicle_id:
                         exit_veh_control = stanley_vehicle_controller(x_init=veh_x, y_init=veh_y, z_init=veh_z, yaw_init=veh_yaw, pitch_init=veh_pitch)
@@ -140,9 +140,11 @@ def main_urban_roadside_cut_in_scenario():
                                 traffic_vehicle_acc = 2 * (spd_tgt - exit_veh_control.v)
                             else:
                                 traffic_vehicle_acc = 2 * (0 - exit_veh_control.v)
+                                
                         else:
                             traffic_vehicle_acc = 0.0
-                        
+                        traffic_manager.traffic_alon[i] = exit_veh_control.acc
+                        traffic_manager.traffic_v[i] = exit_veh_control.v
                         exit_veh_control.update_vehicle_state(acc=traffic_vehicle_acc, z=traffic_vehicle_z, pitch=traffic_vehicle_pitch, dt=dt)
                         traffic_vehicle_poses = exit_veh_control.get_traffic_pose()
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
@@ -164,10 +166,12 @@ def main_urban_roadside_cut_in_scenario():
                     virtual_traffic_sim_info_manager.S_v_pitch[i] = - local_traffic_vehicle_poses[4]
                     
                     # Update virtual traffic braking status
-                    if traffic_manager.traffic_alon[i] <= 0:
+                    if traffic_manager.traffic_alon[i] < 0 or traffic_manager.traffic_v[i] == 0:
                         virtual_traffic_sim_info_manager.S_v_brake_status[i] = True
+                        traffic_manager.traffic_brake_status[i] = True
                     else:
                         virtual_traffic_sim_info_manager.S_v_brake_status[i] = False
+                        traffic_manager.traffic_brake_status[1] = False
                     
                     virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
                     virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
