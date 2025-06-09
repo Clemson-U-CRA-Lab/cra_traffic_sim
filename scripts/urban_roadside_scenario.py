@@ -23,6 +23,7 @@ def main_urban_roadside_cut_in_scenario():
 
     num_Sv = rospy.get_param("/num_vehicles")
     track_style = rospy.get_param("/track_style")
+    mach_e_length = float(rospy.get_param("/car_length"))
 
     if track_style == "GrandPrix":
         closed_loop = True
@@ -98,7 +99,7 @@ def main_urban_roadside_cut_in_scenario():
                     veh_pitch = traffic_vehicle_goal_pose[4] # Use ego lane's pitch information
                     traffic_manager.global_vehicle_update(veh_ID=i, x=veh_x, y=veh_y, z=veh_z, yaw=veh_yaw, pitch=veh_pitch)
                     if i == exit_vehicle_id:
-                        exit_veh_control = stanley_vehicle_controller(x_init=veh_x, y_init=veh_y, z_init=veh_z, yaw_init=veh_yaw, pitch_init=veh_pitch)
+                        exit_veh_control = stanley_vehicle_controller(x_init=veh_x, y_init=veh_y, z_init=veh_z, yaw_init=veh_yaw, pitch_init=veh_pitch, car_length=mach_e_length)
                 continue
             else:
                 msg_counter += 1
@@ -134,7 +135,7 @@ def main_urban_roadside_cut_in_scenario():
                         
                         # Start cut in when time to headway smaller than 2 seconds according to NHTSA safety design notes:
                         # OBJECTIVE TEST SCENARIOS FOR INTEGRATED VEHICLE-BASED SAFETY SYSTEMS
-                        t_headway = (traffic_vehicle_ref_s - ego_vehicle_ref_s) / traffic_manager.ego_v
+                        t_headway = (traffic_vehicle_ref_s - ego_vehicle_ref_s - mach_e_length) / traffic_manager.ego_v
                         if t_headway <= 2 or exit_veh_control.v > 0.1:
                             if traffic_vehicle_ref_s < 540:
                                 traffic_vehicle_acc = 2 * (spd_tgt - exit_veh_control.v)

@@ -17,7 +17,7 @@ import math
 import os
 from utils import *
 class stanley_vehicle_controller():
-    def __init__(self, x_init, y_init, z_init, yaw_init, pitch_init):
+    def __init__(self, x_init, y_init, z_init, yaw_init, pitch_init, car_length):
         self.x = x_init
         self.y = y_init
         self.z = z_init
@@ -26,11 +26,12 @@ class stanley_vehicle_controller():
         self.steering = 0.0
         self.acc = 0.0
         self.v = 0.0
+        self.L = car_length
     
     def update_vehicle_state(self, acc, z, pitch, dt):
         self.x += self.v * math.cos(self.yaw) * dt
         self.y += self.v * math.sin(self.yaw) * dt
-        self.yaw += self.v * math.tan(self.steering) / 6 * dt
+        self.yaw += self.v * math.tan(self.steering) / self.L * dt
         self.v += self.acc * dt
         self.z = z
         self.pitch = pitch
