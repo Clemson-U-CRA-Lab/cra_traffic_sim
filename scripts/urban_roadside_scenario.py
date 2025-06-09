@@ -141,9 +141,10 @@ def main_urban_roadside_cut_in_scenario():
                                 traffic_vehicle_acc = 2 * (spd_tgt - exit_veh_control.v)
                             else:
                                 traffic_vehicle_acc = 2 * (0 - exit_veh_control.v)
-                                
                         else:
                             traffic_vehicle_acc = 0.0
+                        
+                        # Update traffic vehicle poses and messages    
                         traffic_manager.traffic_alon[i] = exit_veh_control.acc
                         traffic_manager.traffic_v[i] = exit_veh_control.v
                         exit_veh_control.update_vehicle_state(acc=traffic_vehicle_acc, z=traffic_vehicle_z, pitch=traffic_vehicle_pitch, dt=dt)
@@ -176,7 +177,7 @@ def main_urban_roadside_cut_in_scenario():
                     
                     virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
                     virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
-
+                    
             # Publish the traffic information
             virtual_traffic_sim_info_manager.construct_hololens_info_msg()
             traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
