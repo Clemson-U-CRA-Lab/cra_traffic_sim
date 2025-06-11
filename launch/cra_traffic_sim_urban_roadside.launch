@@ -6,5 +6,6 @@
     <param name="spd_map_2" value="ITIC_Lane_Change_Modeling_EndLane.csv"/>
     <param name="track_style" value="Rally"/>
     <param name="num_vehicles" value="6"/>
+    <param name="car_length" value="3.5"/>
     <node pkg="cra_traffic_sim" type="urban_roadside_scenario.py" name="CRA_urban_roadside_traffic_scene" output="screen"/>
 </launch>
