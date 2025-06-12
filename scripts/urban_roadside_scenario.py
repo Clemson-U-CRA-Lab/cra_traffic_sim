@@ -80,6 +80,9 @@ def main_urban_roadside_cut_in_scenario():
             virtual_traffic_sim_info_manager.Ego_z = traffic_manager.ego_z
             virtual_traffic_sim_info_manager.Ego_yaw = traffic_manager.ego_yaw
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
+            
+            s_ego_frenet, _, _ = traffic_map_manager_1.find_ego_vehicle_distance_reference(
+                traffic_manager.ego_pose_ref)
 
             if sim_t < 0.1:
                 # Find initial distance of two lanes
@@ -108,7 +111,13 @@ def main_urban_roadside_cut_in_scenario():
                 ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                      traffic_manager.ego_z, traffic_manager.ego_yaw,
                                      traffic_manager.ego_pitch]
-                
+                # Find ego vehicle pose on frenet coordinate
+                l, yaw_s, v_longitudinal, v_lateral = traffic_map_manager_1.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref,
+                                                                                               ego_yaw=ego_vehicle_poses[3],
+                                                                                               vy=traffic_manager.ego_v_north,
+                                                                                               vx=traffic_manager.ego_v_east)
+                traffic_manager.ego_vehicle_frenet_update(
+                    s=s_ego_frenet, l=l, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
                 # Find virtual traffic global poses
                 for i in range(num_Sv):
                     if i == exit_vehicle_id:
