@@ -5,6 +5,7 @@
 import rospy
 from datetime import datetime
 from dataspeed_ulc_msgs.msg import UlcReport
+from std_msgs.msg import Float64MultiArray
 import argparse
 
 import time
@@ -22,15 +23,15 @@ class data_logger_mache_mr:
         self.hour = 0.0
         self.ego_v = 0.0
         self.ego_a = 0.0
-        self.ulc_report_sub = rospy.Subscriber('/Mach_E/ulc_report', UlcReport, self.ulc_report_callback)
+        self.sub_lowlevel_bridge = rospy.Subscriber('/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
         
-    def ulc_report_callback(self, msg):
+    def lowlevel_bridge_callback(self, msg):
         self.microsec = datetime.now().microsecond
         self.sec = datetime.now().second
         self.min = datetime.now().minute
         self.hour = datetime.now().hour
-        self.ego_v = msg.speed_meas
-        self.ego_a = msg.accel_meas
+        self.ego_v = msg.data[15]
+        self.ego_a = msg.data[6]
         
     def update_logging_information(self):
         if self.microsec != self.microsec_prev:

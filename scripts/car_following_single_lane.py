@@ -41,7 +41,7 @@ def main_single_lane_following():
 
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv)
     virtual_traffic_sim_info_manager = hololens_message_manager(
-        num_vehicles=1, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=2)
+        num_vehicles=1, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
     traffic_map_manager = road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     traffic_map_manager.read_map_data()
@@ -71,7 +71,7 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.Ego_yaw = traffic_manager.ego_yaw
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
 
-            s_ego_frenet, _ = traffic_map_manager.find_ego_vehicle_distance_reference(
+            s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(
                 traffic_manager.ego_pose_ref)
             ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(
                 s_ego_frenet)
@@ -82,12 +82,12 @@ def main_single_lane_following():
             front_a_t = [0.0] * 40
 
             # Initialize the traffic simulation
-            if (sim_t < 0.2 and traffic_manager.sim_start):
+            if (sim_t < 0.2):
                 # Update simulation time
                 sim_t += Dt
                 # Find initial distance as start distance on the map
                 traffic_manager.traffic_initialization(
-                    s_ego=s_ego_frenet, ds=12, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
+                    s_ego=s_ego_frenet, ds=8, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
                 continue
             else:
                 msg_counter += 1
@@ -144,7 +144,33 @@ def main_single_lane_following():
 
                         virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
                         virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
+                else:
+                    for i in range(num_Sv):
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(
+                                traffic_manager.traffic_s[i])
+                        ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                             ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                             ego_vehicle_ref_poses[4]]
+                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(
+                            traffic_vehicle_poses, ego_vehicle_poses)
+                        # Update virtual traffic simulation information
+                        virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
+                        virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
+                        # Transfer to right hand coordinate
+                        virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1]
+                        virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
+                        virtual_traffic_sim_info_manager.S_v_yaw[i] = - local_traffic_vehicle_poses[3]
+                        virtual_traffic_sim_info_manager.S_v_pitch[i] = - local_traffic_vehicle_poses[4]
 
+                        # Update virtual traffic braking status
+                        if traffic_manager.traffic_alon[i] <= 0:
+                            virtual_traffic_sim_info_manager.S_v_brake_status[i] = True
+                        else:
+                            virtual_traffic_sim_info_manager.S_v_brake_status[i] = False
+
+                        virtual_traffic_sim_info_manager.S_v_acc[i] = traffic_manager.traffic_alon[i]
+                        virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
+                    
             # Publish the traffic information
             # Construct the ROS message
             virtual_traffic_sim_info_manager.construct_hololens_info_msg()
