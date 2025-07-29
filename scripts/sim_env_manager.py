@@ -9,6 +9,7 @@ import rospy
 from std_msgs.msg import Float64MultiArray
 from hololens_ros_communication.msg import hololens_info
 from cra_traffic_sim.msg import traffic_info, vehicle_traj_seq
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Joy
 
 import time
@@ -50,7 +51,7 @@ class stanley_vehicle_controller():
         return [self.x, self.y, self.z, self.yaw, self.pitch]
     
 class CMI_traffic_sim:
-    def __init__(self, max_num_vehicles, num_vehicles):
+    def __init__(self, max_num_vehicles, num_vehicles, sil_simulation):
         self.serial_id = 0
         self.traffic_s = np.zeros(max_num_vehicles, dtype=float).tolist()
         self.traffic_l = np.zeros(max_num_vehicles, dtype=float).tolist()
@@ -90,9 +91,14 @@ class CMI_traffic_sim:
 
         self.traffic_initialized = False
         self.sim_start = False
-
-        self.sub_lowlevel_bridge = rospy.Subscriber(
-            '/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
+        
+        if sil_simulation:
+            self.sub_lowlevel_bridge = rospy.Subscriber('/odom', Odometry, self.odom_callback)
+            print('Use odom as state tracker')
+        else:
+            self.sub_lowlevel_bridge = rospy.Subscriber('/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
+            print('Use lowlevel as state tracker')
+            
         self.pub_traffic_info = rospy.Publisher(
             '/traffic_sim_info_mache', traffic_info, queue_size=1)
         self.sub_joy = rospy.Subscriber("/joy", Joy, self.joy_callback)
@@ -104,6 +110,13 @@ class CMI_traffic_sim:
             self.sim_start = False
         if msg.buttons[5]:
             self.sim_start = True
+            
+    def odom_callback(self, msg):
+        self.ego_x = msg.pose.pose.position.x
+        self.ego_y = msg.pose.pose.position.y
+        self.ego_yaw = msg.twist.twist.angular.z
+        self.ego_pose_ref = np.array(
+            [[self.ego_x], [self.ego_y], [self.ego_z]])
 
     def lowlevel_bridge_callback(self, msg):
         self.ego_x = msg.data[11]

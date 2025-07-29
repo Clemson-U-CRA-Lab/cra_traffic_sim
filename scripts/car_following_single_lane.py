@@ -30,6 +30,7 @@ def main_single_lane_following():
 
     map_1_filename = rospy.get_param("/map_1")
     spd_filename = rospy.get_param("/spd_map")
+    run_sim = bool(rospy.get_param("/run_sim"))
     pv_dt = float(rospy.get_param("/pv_states_dt"))
 
     map_1_file = os.path.join(parent_dir, "maps", map_1_filename)
@@ -39,7 +40,7 @@ def main_single_lane_following():
     rospy.init_node("CRA_Digital_Twin_Traffic")
     rate = rospy.Rate(200)
 
-    traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv)
+    traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
     virtual_traffic_sim_info_manager = hololens_message_manager(
         num_vehicles=1, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
     traffic_map_manager = road_reader(
@@ -71,10 +72,8 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.Ego_yaw = traffic_manager.ego_yaw
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
 
-            s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(
-                traffic_manager.ego_pose_ref)
-            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(
-                s_ego_frenet)
+            s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
+            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
 
             # Initialize future states sequence
             front_s_t = [0.0] * 40
@@ -82,7 +81,7 @@ def main_single_lane_following():
             front_a_t = [0.0] * 40
 
             # Initialize the traffic simulation
-            if (sim_t < 0.2):
+            if (sim_t < 0.5 and traffic_manager.sim_start):
                 # Update simulation time
                 sim_t += Dt
                 # Find initial distance as start distance on the map
@@ -99,18 +98,15 @@ def main_single_lane_following():
                     # Find the states for next few time steps
                     for i in range(20):
                         sim_dt = i * pv_dt
-                        v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(
-                            front_s=traffic_manager.traffic_s[0] - s_ego_frenet - 12, dt=sim_dt)
+                        v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(front_s=traffic_manager.traffic_s[0] - s_ego_frenet - 12, dt=sim_dt)
                         front_s_t[i] = round(s_t + s_ego_frenet + 12, 3)
                         front_v_t[i] = round(v_t, 3)
                         front_a_t[i] = round(a_t, 3)
 
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
-                        traffic_manager.traffic_update(
-                            dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(
-                            traffic_manager.traffic_s[i])
+                        traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
@@ -175,8 +171,11 @@ def main_single_lane_following():
             # Construct the ROS message
             virtual_traffic_sim_info_manager.construct_hololens_info_msg()
             traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
-            traffic_manager.construct_vehicle_state_sequence_msg(
-                id=msg_counter, t=sim_t, s=front_s_t, v=front_v_t, a=front_a_t)
+            traffic_manager.construct_vehicle_state_sequence_msg(id=msg_counter, 
+                                                                 t=sim_t, 
+                                                                 s=front_s_t, 
+                                                                 v=front_v_t, 
+                                                                 a=front_a_t)
 
             # Publish the ROS message
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()

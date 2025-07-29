@@ -127,7 +127,7 @@ class anl_sim_env:
 if __name__ == "__main__":
     # Define map origins
     run_direction = rospy.get_param("/runDirection")
-    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_itic.csv")
+    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_itic_out.csv")
     file = open(endpoint_file_path)
     lanes_xy = np.float_(list(csv.reader(file,delimiter=",")))
     file.close()

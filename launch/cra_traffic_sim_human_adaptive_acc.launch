@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="pv_speed_profile" default="US06_CMI_urban_mazda_speed_profile.csv" />
+    <arg name="dir" default="0"/>
+    <arg name="sim_run" default="1"/>
+
+    <param name="runDirection" value="$(arg dir)"/>
+    <param name="run_sim" value="$(arg sim_run)"/>
+    <param name="map_1" value="itic_dir0_lane1.csv"/>
+    <param name="map_2" value="itic_dir0_lane2.csv"/>
+    <param name="spd_map" value="$(arg pv_speed_profile)"/>
+    <param name="num_vehicles" value="1"/>
+    <param name="pv_states_dt" value="0.5"/>
+    <param name="track_style" value="GrandPrix"/>
+    <node pkg="cra_traffic_sim" type="car_following_single_lane.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
+    <!-- <node pkg="human_friendly_speed_advisory" type="eco_mpc_car_following.py" name="eco_car_following_advisory_speed" output="screen" /> -->
+    <node pkg="joy" type="joy_node" name="joy_node" output="screen" />
+</launch>
