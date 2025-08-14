@@ -32,6 +32,7 @@ def main_single_lane_following():
     spd_filename = rospy.get_param("/spd_map")
     run_sim = bool(rospy.get_param("/run_sim"))
     pv_dt = float(rospy.get_param("/pv_states_dt"))
+    use_preview = bool(rospy.get_param("/use_preview"))
 
     map_1_file = os.path.join(parent_dir, "maps", map_1_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
@@ -94,19 +95,38 @@ def main_single_lane_following():
                     # Update simulation time
                     sim_t += Dt
                     spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
+                    if not use_preview:
+                        front_s_t[0] = round(traffic_manager.traffic_s[0])
+                        front_v_t[0] = round(traffic_manager.traffic_v[0])
+                        front_a_t[0] = traffic_manager.traffic_alon[0]
 
                     # Find the states for next few time steps
-                    for i in range(20):
-                        sim_dt = i * pv_dt
-                        v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(front_s=traffic_manager.traffic_s[0] - s_ego_frenet - 12, dt=sim_dt)
-                        front_s_t[i] = round(s_t + s_ego_frenet + 12, 3)
-                        front_v_t[i] = round(v_t, 3)
-                        front_a_t[i] = round(a_t, 3)
+                    for i in range(1, 20):
+                        if not use_preview:
+                            if front_v_t[i - 1] >= 20:
+                                front_a_t[i] = 0
+                                front_v_t[i] = 20
+                            
+                            if front_v_t[i - 1] <= 0:
+                                front_a_t[i] = 0
+                                front_v_t[i] = 0
+                        
+                            front_s_t[i] = round(front_s_t[i - 1] + front_v_t[i - 1] * pv_dt + 0.5 * front_a_t[i - 1] * pv_dt ** 2, 2)
+                            front_v_t[i] = round(np.clip(front_v_t[i - 1] + front_a_t[i - 1] * pv_dt, 0, 20), 2)
+                            front_a_t[i] = front_a_t[i - 1]
+                        else:
+                            sim_dt = i * pv_dt
+                            v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(dt=sim_dt, sim_t=sim_t)
+                            front_s_t[i] = round(s_t + s_ego_frenet + 12, 3)
+                            front_v_t[i] = round(v_t, 3)
+                            front_a_t[i] = round(a_t, 3)
+                        
 
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
                         traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                        print(traffic_manager.traffic_s[0], traffic_manager.traffic_v[0])
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
@@ -118,7 +138,7 @@ def main_single_lane_following():
                                                                                                        vx=traffic_manager.ego_v_east)
 
                         traffic_manager.ego_vehicle_frenet_update(
-                            s=s_ego_frenet, l=l, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
+                            s=s_ego_frenet, l=0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
 
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(
                             traffic_vehicle_poses, ego_vehicle_poses)

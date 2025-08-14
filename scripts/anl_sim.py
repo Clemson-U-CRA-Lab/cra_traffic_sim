@@ -162,7 +162,7 @@ if __name__ == "__main__":
         dt = time.time() - start_t - sim_t
         sim_t = time.time() - start_t
         try:
-            print('Ego V: ' + str(round(anl_sim.ego_v, 2)) + ' m/s.' + ' Ego Acc: ' + str(round(anl_sim.acc, 3)) + ' m/s^2.')
+            print('Ego S: ' + str(round(anl_sim.ego_s, 2)) + 'm. ' + 'Ego V: ' + str(round(anl_sim.ego_v, 2)) + ' m/s.' + ' Ego Acc: ' + str(round(anl_sim.acc, 3)) + ' m/s^2.')
             anl_sim.step_forward_kinematic_bicycle(dt=dt)
             anl_sim.pub_odom()
             rate.sleep()

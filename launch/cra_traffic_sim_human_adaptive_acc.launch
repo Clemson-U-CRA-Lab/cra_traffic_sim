@@ -11,6 +11,7 @@
     <param name="spd_map" value="$(arg pv_speed_profile)"/>
     <param name="num_vehicles" value="1"/>
     <param name="pv_states_dt" value="0.5"/>
+    <param name="use_preview" value="0"/>
     <param name="track_style" value="GrandPrix"/>
     <node pkg="cra_traffic_sim" type="car_following_single_lane.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
     <!-- <node pkg="human_friendly_speed_advisory" type="eco_mpc_car_following.py" name="eco_car_following_advisory_speed" output="screen" /> -->

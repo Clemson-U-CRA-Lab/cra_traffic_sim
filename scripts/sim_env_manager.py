@@ -354,10 +354,10 @@ class road_reader:
 
         return speed_t, dist_t, acc_t
     
-    def find_front_vehicle_predicted_state(self, front_s, dt):
+    def find_front_vehicle_predicted_state(self, dt, sim_t):
         # Locate the index of front vehicle's distance
-        front_s_ref = np.array(self.dist)
-        t_id = np.argmin(np.abs(front_s_ref - front_s))
+        front_t = np.array(self.t)
+        t_id = np.argmin(np.abs(front_t - sim_t))
         
         # Find the time id of future states
         t_ref = np.array(self.t)
