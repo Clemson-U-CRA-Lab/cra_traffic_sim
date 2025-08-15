@@ -53,6 +53,7 @@ def main_single_lane_following():
     # start_t = time.time()
     prev_t = time.time()
     sim_t = 0.0
+    ego_s_init = 0.0
 
     while not rospy.is_shutdown():
         try:
@@ -72,7 +73,7 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.Ego_z = traffic_manager.ego_z
             virtual_traffic_sim_info_manager.Ego_yaw = traffic_manager.ego_yaw
             virtual_traffic_sim_info_manager.Ego_pitch = traffic_manager.ego_pitch
-
+            
             s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
             ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
 
@@ -88,6 +89,7 @@ def main_single_lane_following():
                 # Find initial distance as start distance on the map
                 traffic_manager.traffic_initialization(
                     s_ego=s_ego_frenet, ds=8, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
+                ego_s_init = s_ego_frenet
                 continue
             else:
                 msg_counter += 1
@@ -96,7 +98,7 @@ def main_single_lane_following():
                     sim_t += Dt
                     spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
                     if not use_preview:
-                        front_s_t[0] = round(traffic_manager.traffic_s[0])
+                        front_s_t[0] = round(traffic_manager.traffic_s[0]) - ego_s_init
                         front_v_t[0] = round(traffic_manager.traffic_v[0])
                         front_a_t[0] = traffic_manager.traffic_alon[0]
 
@@ -126,7 +128,6 @@ def main_single_lane_following():
                     for i in range(num_Sv):
                         traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
-                        print(traffic_manager.traffic_s[0], traffic_manager.traffic_v[0])
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
