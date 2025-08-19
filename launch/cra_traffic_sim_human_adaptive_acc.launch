@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="pv_speed_profile" default="US06_CMI_urban_mazda_speed_profile.csv" />
+    <arg name="pv_speed_profile" default="US06_CMI_Urban_speed_profile.csv" />
     <arg name="dir" default="0"/>
     <arg name="sim_run" default="1"/>
 
@@ -16,4 +16,7 @@
     <node pkg="cra_traffic_sim" type="car_following_single_lane.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
     <!-- <node pkg="human_friendly_speed_advisory" type="eco_mpc_car_following.py" name="eco_car_following_advisory_speed" output="screen" /> -->
     <node pkg="joy" type="joy_node" name="joy_node" output="screen" />
+    <group if="$(arg sim_run)">
+        <node pkg="cra_traffic_sim" type="anl_sim.py" name="anl_sim" output="screen" />
+    </group>
 </launch>

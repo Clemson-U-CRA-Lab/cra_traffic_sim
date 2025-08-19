@@ -115,6 +115,11 @@ class CMI_traffic_sim:
         self.ego_x = msg.pose.pose.position.x
         self.ego_y = msg.pose.pose.position.y
         self.ego_yaw = msg.twist.twist.angular.z
+        self.ego_s = msg.pose.pose.orientation.z
+        self.ego_sv = msg.twist.twist.linear.x
+        self.ego_lv = msg.twist.twist.linear.y
+        self.ego_v = (msg.twist.twist.linear.x ** 2 + msg.twist.twist.linear.y ** 2) ** 0.5
+        self.ego_acc = msg.pose.pose.orientation.x
         self.ego_pose_ref = np.array(
             [[self.ego_x], [self.ego_y], [self.ego_z]])
 
@@ -161,10 +166,10 @@ class CMI_traffic_sim:
             self.traffic_alon[vehicle_id] * dt**2
 
     def ego_vehicle_frenet_update(self, s, l, sv, lv, yaw_s):
-        self.ego_s = s
+        #self.ego_s = s
         self.ego_l = l
-        self.ego_sv = sv
-        self.ego_lv = lv
+        # self.ego_sv = sv
+        # self.ego_lv = lv
         self.ego_yaw_s = yaw_s
         
     def construct_vehicle_state_sequence_msg(self, id, t, s, v, a):

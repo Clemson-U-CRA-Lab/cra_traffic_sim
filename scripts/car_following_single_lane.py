@@ -133,7 +133,7 @@ def main_single_lane_following():
                                              ego_vehicle_ref_poses[4]]
 
                         # Find ego vehicle pose on frenet coordinate
-                        l, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref,
+                        _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref,
                                                                                                        ego_yaw=ego_vehicle_poses[3],
                                                                                                        vy=traffic_manager.ego_v_north,
                                                                                                        vx=traffic_manager.ego_v_east)
