@@ -68,7 +68,7 @@ class anl_sim_env:
         self.frenet_to_cartesian_coordinate_transform()
         
     def step_forward_kinematic_bicycle_v2(self, dt):
-        self. frenet_to_cartesian_coordinate_transform()
+        self.frenet_to_cartesian_coordinate_transform()
         self.acc = self.acc + 0.5 * (self.acc_tgt - self.acc)
         self.ego_x = self.ego_x + self.ego_v * math.cos(self.ego_yaw)* dt
         self.ego_y = self.ego_y + (self.ego_v * math.sin(self.ego_yaw) / self.LaneWidth) * dt
@@ -127,7 +127,7 @@ class anl_sim_env:
 if __name__ == "__main__":
     # Define map origins
     run_direction = rospy.get_param("/runDirection")
-    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/laneEndpoints_itic_out.csv")
+    endpoint_file_path = os.path.join(os.path.dirname(__file__), "map_origins/custom_map_endpoint.csv")
     file = open(endpoint_file_path)
     lanes_xy = np.float_(list(csv.reader(file,delimiter=",")))
     file.close()
@@ -150,7 +150,7 @@ if __name__ == "__main__":
         
     # Initialize ros node
     rospy.init_node('anl_sim')
-    anl_sim = anl_sim_env(wheelbase=5.0, x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.7)
+    anl_sim = anl_sim_env(wheelbase=5.0, x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.8)
     rate = rospy.Rate(100)
     
     # Message parameters

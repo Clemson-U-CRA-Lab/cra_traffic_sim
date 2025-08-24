@@ -61,7 +61,7 @@ def main_single_lane_following():
             Dt = time.time() - prev_t
             # Refresh previous frame time
             prev_t = time.time()
-
+            
             # Add traffic information to simulation managment class
             traffic_manager.serial_id = msg_counter
             virtual_traffic_sim_info_manager.serial = msg_counter
@@ -112,7 +112,7 @@ def main_single_lane_following():
                             if front_v_t[i - 1] <= 0:
                                 front_a_t[i] = 0
                                 front_v_t[i] = 0
-                        
+                            
                             front_s_t[i] = round(front_s_t[i - 1] + front_v_t[i - 1] * pv_dt + 0.5 * front_a_t[i - 1] * pv_dt ** 2, 2)
                             front_v_t[i] = round(np.clip(front_v_t[i - 1] + front_a_t[i - 1] * pv_dt, 0, 20), 2)
                             front_a_t[i] = front_a_t[i - 1]
@@ -122,7 +122,6 @@ def main_single_lane_following():
                             front_s_t[i] = round(s_t + s_ego_frenet + 12, 3)
                             front_v_t[i] = round(v_t, 3)
                             front_a_t[i] = round(a_t, 3)
-                        
 
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
@@ -140,13 +139,14 @@ def main_single_lane_following():
 
                         traffic_manager.ego_vehicle_frenet_update(
                             s=s_ego_frenet, l=0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
-
+                        
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(
                             traffic_vehicle_poses, ego_vehicle_poses)
 
                         # Update virtual traffic simulation information
                         virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
                         virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
+                        
                         # Transfer to right hand coordinate
                         virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1]
                         virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
@@ -163,16 +163,16 @@ def main_single_lane_following():
                         virtual_traffic_sim_info_manager.S_v_vx[i] = traffic_manager.traffic_v[i]
                 else:
                     for i in range(num_Sv):
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(
-                                traffic_manager.traffic_s[i])
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
-                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(
-                            traffic_vehicle_poses, ego_vehicle_poses)
+                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
+                        
                         # Update virtual traffic simulation information
                         virtual_traffic_sim_info_manager.virtual_vehicle_id[i] = i
                         virtual_traffic_sim_info_manager.S_v_x[i] = local_traffic_vehicle_poses[0]
+                        
                         # Transfer to right hand coordinate
                         virtual_traffic_sim_info_manager.S_v_y[i] = - local_traffic_vehicle_poses[1]
                         virtual_traffic_sim_info_manager.S_v_z[i] = local_traffic_vehicle_poses[2]
