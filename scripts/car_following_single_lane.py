@@ -76,12 +76,12 @@ def main_single_lane_following():
             
             s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
             ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
-
+            
             # Initialize future states sequence
             front_s_t = [0.0] * 40
             front_v_t = [0.0] * 40
             front_a_t = [0.0] * 40
-
+            
             # Initialize the traffic simulation
             if (sim_t < 0.5 and traffic_manager.sim_start):
                 # Update simulation time
@@ -196,7 +196,8 @@ def main_single_lane_following():
                                                                  t=sim_t, 
                                                                  s=front_s_t, 
                                                                  v=front_v_t, 
-                                                                 a=front_a_t)
+                                                                 a=front_a_t, 
+                                                                 sim_start=traffic_manager.sim_start)
 
             # Publish the ROS message
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()

@@ -172,10 +172,12 @@ class CMI_traffic_sim:
         # self.ego_lv = lv
         self.ego_yaw_s = yaw_s
         
-    def construct_vehicle_state_sequence_msg(self, id, t, s, v, a):
+    def construct_vehicle_state_sequence_msg(self, id, t, s, v, a, sim_start):
         self.vehicle_traj_seq_msg = vehicle_traj_seq()
         self.vehicle_traj_seq_msg.sim_t = t
         self.vehicle_traj_seq_msg.serial = id
+        
+        self.vehicle_traj_seq_msg.sim_start = sim_start
 
         for i in range(len(v)):
             self.vehicle_traj_seq_msg.front_a[i] = a[i]
