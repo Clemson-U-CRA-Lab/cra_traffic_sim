@@ -3,8 +3,7 @@
 # This code is designed to track the planned trajectory from MIQP lane change traffic planner (Dr. Vahidi's research group)
 
 import rospy
-from std_msgs.msg import Float64MultiArray, Int8
-from trajectory_msgs.msg import MultiDOFJointTrajectory
+from dbw_mkz_msgs.msg import ThrottleReport, BrakeReport
 from nav_msgs.msg import Odometry
 from mach_e_control.msg import control_target
 
@@ -34,14 +33,25 @@ class anl_sim_env:
         self.ego_v = 0.0
         self.L = wheelbase
         
+        self.brake_torque = 0.0
+        self.acc_pedal_output = 0.0
+        
         self.x0 = x_origin
         self.y0 = y_origin
         self.gamma = gamma
         self.LaneWidth = LaneWidth
         
         self.control_sub = rospy.Subscriber('/control_target_cmd', control_target, self.control_sub_callback)
+        self.brake_report_sub = rospy.Subscriber('/MachE/BrakeReport', BrakeReport, self.brake_report_callback)
+        self.acc_pedal_output_sub = rospy.Subscriber('/MachE/ThrottleReport', ThrottleReport, self.acc_pedal_output_callback)
         self.odom_pub = rospy.Publisher('/odom', Odometry, queue_size=1)
-            
+    
+    def brake_report_callback(self, msg):
+        self.brake_torque = msg.torque_output
+    
+    def acc_pedal_output_callback(self, msg):
+        self.acc_pedal_output = msg.pedal_output
+    
     def step_forward(self, dt):
         self.ego_s = self.ego_s + self.ego_sdot * dt
         self.ego_l = self.ego_l + self.ego_ldot * dt
