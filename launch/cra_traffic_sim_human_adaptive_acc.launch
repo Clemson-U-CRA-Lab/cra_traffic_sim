@@ -19,4 +19,6 @@
     <group if="$(arg sim_run)">
         <node pkg="cra_traffic_sim" type="anl_sim.py" name="anl_sim" output="screen" />
     </group>
+
+    <include file="$(find hololens_ros_communication)/launch/hololens_sender.launch" />
 </launch>
