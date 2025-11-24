@@ -87,8 +87,7 @@ def main_single_lane_following():
                 # Update simulation time
                 sim_t += Dt
                 # Find initial distance as start distance on the map
-                traffic_manager.traffic_initialization(
-                    s_ego=s_ego_frenet, ds=8, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
+                traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=8, line_number=0, vehicle_id=0, vehicle_id_in_lane=0) # One vehicle in lane 0
                 ego_s_init = s_ego_frenet
                 continue
             else:

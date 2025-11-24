@@ -294,8 +294,8 @@ class road_reader:
             next_id = (min_ref_coordinate_id + 1) % len(self.s)
             prev_id = (min_ref_coordinate_id - 1)
         else:
-            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s))
-            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s))
+            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s) - 1)
+            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s) - 1)
 
         x_next = self.x[next_id]
         y_next = self.y[next_id]
@@ -305,10 +305,8 @@ class road_reader:
         y_prev = self.y[prev_id]
         z_prev = self.z[prev_id]
 
-        dist_to_next = ((ego_poses[0] - x_next)**2 + (ego_poses[1] -
-                        y_next)**2 + (ego_poses[2] - z_next)**2)**0.5
-        dist_to_prev = ((ego_poses[0] - x_prev)**2 + (ego_poses[1] -
-                        y_prev)**2 + (ego_poses[2] - z_prev)**2)**0.5
+        dist_to_next = ((ego_poses[0] - x_next)**2 + (ego_poses[1] - y_next)**2 + (ego_poses[2] - z_next)**2)**0.5
+        dist_to_prev = ((ego_poses[0] - x_prev)**2 + (ego_poses[1] - y_prev)**2 + (ego_poses[2] - z_prev)**2)**0.5
 
         w = dist_to_next / (dist_to_next + dist_to_prev)
         s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
