@@ -166,7 +166,7 @@ class CMI_traffic_sim:
             self.traffic_alon[vehicle_id] * dt**2
 
     def ego_vehicle_frenet_update(self, s, l, sv, lv, yaw_s):
-        #self.ego_s = s
+        self.ego_s = s
         self.ego_l = l
         # self.ego_sv = sv
         # self.ego_lv = lv
@@ -414,7 +414,30 @@ class hololens_message_manager():
 
         self.pub_virtual_traffic_info = rospy.Publisher(
             '/virtual_sim_info_mache', hololens_info, queue_size=1)
-
+    
+    def update_virtual_vehicle_state(self, vehicle_id, x, y, z, pitch, yaw, acc, vx, vy, brake_status):
+        self.virtual_vehicle_id[vehicle_id] = vehicle_id
+        self.S_v_x[vehicle_id] = x
+        self.S_v_y[vehicle_id] = y
+        self.S_v_z[vehicle_id] = z
+        self.S_v_pitch[vehicle_id] = pitch
+        self.S_v_yaw[vehicle_id] = yaw
+        self.S_v_acc[vehicle_id] = acc
+        self.S_v_vx[vehicle_id] = vx
+        self.S_v_vy[vehicle_id] = vy
+        self.S_v_brake_status[vehicle_id] = brake_status
+    
+    def update_ego_state(self, serial_id, ego_x, ego_y, ego_z, ego_pitch, ego_yaw, ego_acc, ego_omega, ego_v):
+        self.serial = serial_id
+        self.Ego_x = ego_x
+        self.Ego_y = ego_y
+        self.Ego_z = ego_z
+        self.Ego_pitch = ego_pitch
+        self.Ego_yaw = ego_yaw
+        self.Ego_acc = ego_acc
+        self.Ego_omega = ego_omega
+        self.Ego_v = ego_v
+    
     def construct_hololens_info_msg(self):
         self.hololens_message = hololens_info()
         self.hololens_message.serial = self.serial
