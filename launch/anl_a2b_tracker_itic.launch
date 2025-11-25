@@ -3,4 +3,5 @@
     <arg name="dir" default="0"/>
     <param name="runDirection" value="$(arg dir)"/>
     <node pkg="cra_traffic_sim" type="anl_a2b_planner_tracker.py" name="highlevel_a2b_tracker" output="screen"/>
+    <node pkg="low_level_bridge" name="bridge" type="bridge_KF_lanechange_MachE.py" output="screen"/>
 </launch>

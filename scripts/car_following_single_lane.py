@@ -3,6 +3,8 @@
 import rospy
 from std_msgs.msg import Float64MultiArray
 from hololens_ros_communication.msg import hololens_info
+from std_msgs.msg import Float64MultiArray, Int8
+
 
 import time
 import numpy as np
@@ -33,13 +35,14 @@ def main_single_lane_following():
     run_sim = bool(rospy.get_param("/run_sim"))
     pv_dt = float(rospy.get_param("/pv_states_dt"))
     use_preview = bool(rospy.get_param("/use_preview"))
+    run_direction = rospy.get_param("/runDirection")
 
     map_1_file = os.path.join(parent_dir, "maps", map_1_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
     print('PV speed pfofile is: ' , spd_file)
 
     rospy.init_node("CRA_Digital_Twin_Traffic")
-    rate = rospy.Rate(200)
+    rate = rospy.Rate(100)
 
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
     virtual_traffic_sim_info_manager = hololens_message_manager(
@@ -48,6 +51,8 @@ def main_single_lane_following():
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
+    dir_msg_publisher = rospy.Publisher('/runDirection', Int8, queue_size=2)
+    lowlevel_heartbeat_publisher = rospy.Publisher('/low_level_heartbeat', Int8, queue_size=2)
 
     msg_counter = 0
     # start_t = time.time()
@@ -76,11 +81,19 @@ def main_single_lane_following():
             
             s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
             ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
-            
             # Initialize future states sequence
             front_s_t = [0.0] * 40
             front_v_t = [0.0] * 40
             front_a_t = [0.0] * 40
+
+            run_dir_msg = Int8()
+            run_dir_msg.data = run_direction
+            dir_msg_publisher.publish(run_dir_msg)
+            
+            # Publish lowlevel heartbeat
+            lowlevel_heartbeat_msg = Int8()
+            lowlevel_heartbeat_msg.data = 1
+            lowlevel_heartbeat_publisher.publish(lowlevel_heartbeat_msg)
             
             # Initialize the traffic simulation
             if (sim_t < 0.5 and traffic_manager.sim_start):
@@ -126,7 +139,7 @@ def main_single_lane_following():
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
                         traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
@@ -160,7 +173,7 @@ def main_single_lane_following():
 
                 else:
                     for i in range(num_Sv):
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]

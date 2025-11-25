@@ -8,14 +8,14 @@ linewidth = 3;
 textsize = 20;
 loop_map = false;
 mapping = true;
-save_mapping = false;
-
+save_mapping = true;
+map_file_name = 'test_dir0.csv';
 %%  Load the data
 % Load rosbag file
-bag_filename = 'itic_dir0_lane_change.bag';
+[bag_filename, bag_location] = uigetfile('.bag', 'Please select rosbag files');
 
 % Read the rosbag data
-bag = rosbag(bag_filename);
+bag = rosbag(strcat([bag_location, bag_filename]));
 
 low_level_msg = '/bridge_to_lowlevel';
 

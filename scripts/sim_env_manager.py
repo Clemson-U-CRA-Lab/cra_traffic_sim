@@ -70,6 +70,7 @@ class CMI_traffic_sim:
         self.traffic_Sv_id = np.zeros(max_num_vehicles, dtype=int).tolist()
         self.traffic_info_msg = traffic_info()
         self.vehicle_traj_msg = vehicle_traj_seq()
+        self.s_init = 0.0
 
         self.ego_s = 0.0
         self.ego_l = 0.0
@@ -284,8 +285,8 @@ class road_reader:
         return [traffic_x, traffic_y, traffic_z, traffic_yaw, traffic_pitch]
 
     def find_ego_vehicle_distance_reference(self, ego_poses):
-        cmi_traj_coordinate = np.array([self.x, self.y, self.z])
-        dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
+        traj_coordinate = np.array([self.x, self.y, self.z])
+        dist_to_map = np.linalg.norm(traj_coordinate - ego_poses, axis=0)
         min_ref_coordinate_id = np.argmin(dist_to_map)
         min_dist_to_map = np.min(dist_to_map)
         s_max = np.max(self.s)
@@ -322,8 +323,8 @@ class road_reader:
             next_id = (min_ref_coordinate_id + 1) % len(self.s)
             prev_id = (min_ref_coordinate_id - 1)
         else:
-            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s))
-            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s))
+            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s) - 1)
+            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s) - 1)
 
         x_t = ego_poses[0][0]
         y_t = ego_poses[1][0]
