@@ -6,7 +6,7 @@ dbstop if error
 save_data = input('Do you wish to save this data [0 & 1]: ');
 
 %%  Choose and load the speed profile data
-filename = 'ITIC_Lane_Change_Modeling_StartLane_Fast.csv';
+filename = uigetfile('.csv', 'Choose driving cycle file.');
 data = load(filename);
 
 t = data(:, 1);
@@ -16,7 +16,7 @@ s = data(:, 4);
 
 %%  Generate scaled speed profile
 dt = mean(diff(t));
-aa = 0.33 * a;
+aa = a;
 vv = cumsum(aa * dt);
 ss = cumsum(0.5 * (vv(2:end) + vv(1:end-1)) * dt);
 ss = [ss; ss(end)];
