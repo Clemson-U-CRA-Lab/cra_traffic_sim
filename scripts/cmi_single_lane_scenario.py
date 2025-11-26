@@ -92,7 +92,7 @@ def main_single_lane_following():
                 if traffic_manager.sim_start:
                     # Update simulation time
                     sim_t += Dt
-                    spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
+                    spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
                     if not use_preview:
                         front_s_t[0] = round(traffic_manager.traffic_s[0], 3)
                         front_v_t[0] = round(traffic_manager.traffic_v[0], 3)
@@ -121,7 +121,11 @@ def main_single_lane_following():
 
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
-                        traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
+                        #traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
+                        traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + s_ego_frenet + init_gap, 
+                                                                        v_t=spd_t, 
+                                                                        a_t=acc_t, 
+                                                                        vehicle_id=i)
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,

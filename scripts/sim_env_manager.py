@@ -165,7 +165,12 @@ class CMI_traffic_sim:
         self.traffic_s[vehicle_id] = self.traffic_s[vehicle_id] + \
             self.traffic_v[vehicle_id] * dt + 0.5 * \
             self.traffic_alon[vehicle_id] * dt**2
-
+    
+    def traffic_update_from_spd_profile(self, s_t, v_t, a_t, vehicle_id):
+        self.traffic_v[vehicle_id] = v_t
+        self.traffic_alon[vehicle_id] = a_t
+        self.traffic_s[vehicle_id] = s_t
+    
     def ego_vehicle_frenet_update(self, s, l, sv, lv, yaw_s):
         self.ego_s = s
         self.ego_l = l
