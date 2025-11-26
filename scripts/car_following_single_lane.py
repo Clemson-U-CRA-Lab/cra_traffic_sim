@@ -59,6 +59,7 @@ def main_single_lane_following():
     prev_t = time.time()
     sim_t = 0.0
     ego_s_init = 0.0
+    init_gap = 8.0
 
     while not rospy.is_shutdown():
         try:
@@ -100,8 +101,7 @@ def main_single_lane_following():
                 # Update simulation time
                 sim_t += Dt
                 # Find initial distance as start distance on the map
-                traffic_manager.traffic_initialization(
-                    s_ego=s_ego_frenet, ds=8, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
+                traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=init_gap, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
                 ego_s_init = s_ego_frenet
                 continue
             else:
@@ -109,9 +109,9 @@ def main_single_lane_following():
                 if traffic_manager.sim_start:
                     # Update simulation time
                     sim_t += Dt
-                    spd_t, _, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
+                    spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t) # Get target speed and distance at current time
                     if not use_preview:
-                        front_s_t[0] = round(traffic_manager.traffic_s[0]) - ego_s_init
+                        front_s_t[0] = round(traffic_manager.traffic_s[0])
                         front_v_t[0] = round(traffic_manager.traffic_v[0])
                         front_a_t[0] = traffic_manager.traffic_alon[0]
 
@@ -132,14 +132,18 @@ def main_single_lane_following():
                         else:
                             sim_dt = i * pv_dt
                             v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(dt=sim_dt, sim_t=sim_t)
-                            front_s_t[i] = round(s_t + s_ego_frenet + 12, 3)
+                            front_s_t[i] = round(s_t + ego_s_init + init_gap, 3)
                             front_v_t[i] = round(v_t, 3)
                             front_a_t[i] = round(a_t, 3)
 
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
-                        traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet)
+                        # traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
+                        traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + ego_s_init + init_gap, 
+                                                                        v_t=spd_t, 
+                                                                        a_t=acc_t, 
+                                                                        vehicle_id=i)
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]

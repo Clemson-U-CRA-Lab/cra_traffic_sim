@@ -51,6 +51,7 @@ def main_single_lane_following():
     # start_t = time.time()
     prev_t = time.time()
     sim_t = 0.0
+    ego_s_init = 0.0
     init_gap = 8.0
 
     while not rospy.is_shutdown():
@@ -86,6 +87,7 @@ def main_single_lane_following():
                 sim_t += Dt
                 # Find initial distance as start distance on the map
                 traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=init_gap, line_number=0, vehicle_id=0, vehicle_id_in_lane=0) # One vehicle in lane 0
+                ego_s_init = s_ego_frenet
                 continue
             else:
                 msg_counter += 1
@@ -115,14 +117,14 @@ def main_single_lane_following():
                         else:
                             sim_dt = i * pv_dt
                             v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(dt=sim_dt, sim_t=sim_t)
-                            front_s_t[i] = round(s_t + s_ego_frenet + init_gap, 3)
+                            front_s_t[i] = round(s_t + ego_s_init + init_gap, 3)
                             front_v_t[i] = round(v_t, 3)
                             front_a_t[i] = round(a_t, 3)
 
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
                         #traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                        traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + s_ego_frenet + init_gap, 
+                        traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + ego_s_init + init_gap, 
                                                                         v_t=spd_t, 
                                                                         a_t=acc_t, 
                                                                         vehicle_id=i)
