@@ -28,7 +28,7 @@ def main_single_lane_following():
     if track_style == "Rally":
         closed_loop = False
 
-    map_1_filename = rospy.get_param("/map_1")
+    map_1_filename = rospy.get_param("/map")
     spd_filename = rospy.get_param("/spd_map")
     run_sim = bool(rospy.get_param("/run_sim"))
     pv_dt = float(rospy.get_param("/pv_states_dt"))

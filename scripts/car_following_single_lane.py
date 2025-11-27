@@ -30,14 +30,14 @@ def main_single_lane_following():
     if track_style == "Rally":
         closed_loop = False
 
-    map_1_filename = rospy.get_param("/map_1")
+    map_filename = rospy.get_param("/map")
     spd_filename = rospy.get_param("/spd_map")
     run_sim = bool(rospy.get_param("/run_sim"))
     pv_dt = float(rospy.get_param("/pv_states_dt"))
     use_preview = bool(rospy.get_param("/use_preview"))
     run_direction = rospy.get_param("/runDirection")
 
-    map_1_file = os.path.join(parent_dir, "maps", map_1_filename)
+    map_1_file = os.path.join(parent_dir, "maps", map_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
     print('PV speed pfofile is: ' , spd_file)
 

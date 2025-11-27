@@ -6,6 +6,7 @@ import rospy
 from dbw_mkz_msgs.msg import ThrottleReport, BrakeReport
 from nav_msgs.msg import Odometry
 from mach_e_control.msg import control_target
+from cra_traffic_sim.msg import traffic_info
 
 import time
 import numpy as np
@@ -33,6 +34,11 @@ class anl_sim_env:
         self.ego_v = 0.0
         self.L = wheelbase
         
+        self.sim_t = 0.0
+        self.front_s = 0.0
+        self.front_v = 0.0
+        self.front_a = 0.0
+        
         self.brake_torque = 0.0
         self.acc_pedal_output = 0.0
         
@@ -44,7 +50,14 @@ class anl_sim_env:
         self.control_sub = rospy.Subscriber('/control_target_cmd', control_target, self.control_sub_callback)
         self.brake_report_sub = rospy.Subscriber('/MachE/BrakeReport', BrakeReport, self.brake_report_callback)
         self.acc_pedal_output_sub = rospy.Subscriber('/MachE/ThrottleReport', ThrottleReport, self.acc_pedal_output_callback)
+        self.traffic_sim_info_sub = rospy.Subscriber('/traffic_sim_info_mache', traffic_info, self.traffic_sim_info_callback)
         self.odom_pub = rospy.Publisher('/odom', Odometry, queue_size=1)
+    
+    def traffic_sim_info_callback(self, msg):
+        self.sim_t = msg.sim_T
+        self.front_s = msg.S_v_s[0]
+        self.front_v = msg.S_v_sv[0]
+        self.front_a = msg.S_v_acc[0]
     
     def brake_report_callback(self, msg):
         self.brake_torque = msg.torque_output
@@ -172,7 +185,11 @@ if __name__ == "__main__":
         dt = time.time() - start_t - sim_t
         sim_t = time.time() - start_t
         try:
-            print('Sim T:' + str(round(sim_t, 1)) + 's. Ego S: ' + str(round(anl_sim.ego_s, 2)) + 'm. ' + 'Ego V: ' + str(round(anl_sim.ego_v*2.237, 2)) + ' mph.' + ' Ego Acc: ' + str(round(anl_sim.acc, 3)) + ' m/s^2.', end="\r")
+            print('Sim T:' + str(round(anl_sim.sim_t, 1)) + 's. Ego S: '
+                           + str(round(anl_sim.ego_s, 2)) + 'm. Gap to front: '
+                           + str(round(anl_sim.front_s - anl_sim.ego_s, 2)) + 'm. Ego V: '
+                           + str(round(anl_sim.ego_v*2.237, 2)) + ' mph. Ego Acc: '
+                           + str(round(anl_sim.acc, 3)) + ' m/s^2.', end="\r")
             anl_sim.step_forward_kinematic_bicycle(dt=dt)
             anl_sim.pub_odom()
             rate.sleep()
