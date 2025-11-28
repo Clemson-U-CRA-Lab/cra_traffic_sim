@@ -150,15 +150,15 @@ def main_single_lane_following():
                             virtual_vehicle_brake = False
                         # Update virtual traffic simulation information
                         virtual_traffic_sim_info_manager.update_virtual_vehicle_state(vehicle_id=i,
-                                                                                   x=local_traffic_vehicle_poses[0],
-                                                                                   y=-local_traffic_vehicle_poses[1], # Transfer to right hand coordinate
-                                                                                   z=local_traffic_vehicle_poses[2],
-                                                                                   yaw=-local_traffic_vehicle_poses[3], # Transfer to right hand coordinate
-                                                                                   pitch=-local_traffic_vehicle_poses[4], # Transfer to right hand coordinate
-                                                                                   acc=traffic_manager.traffic_alon[i],
-                                                                                   vx=traffic_manager.traffic_v[i],
-                                                                                   vy=0.0,
-                                                                                   brake_status=virtual_vehicle_brake)
+                                                                                      x=local_traffic_vehicle_poses[0],
+                                                                                      y=-local_traffic_vehicle_poses[1], # Transfer to right hand coordinate
+                                                                                      z=local_traffic_vehicle_poses[2],
+                                                                                      yaw=-local_traffic_vehicle_poses[3], # Transfer to right hand coordinate
+                                                                                      pitch=-local_traffic_vehicle_poses[4], # Transfer to right hand coordinate
+                                                                                      acc=traffic_manager.traffic_alon[i],
+                                                                                      vx=traffic_manager.traffic_v[i],
+                                                                                      vy=0.0,
+                                                                                      brake_status=virtual_vehicle_brake)
                 else: # Simulation not started yet
                     for i in range(num_Sv):
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])

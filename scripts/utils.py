@@ -223,3 +223,17 @@ def construct_mpc_pose_reference_msg(serial_id, num_ref, Dt, ref_x, ref_y, ref_y
         mpc_ref_msg.acc_ref[i] = ref_acc[i]
     
     return mpc_ref_msg
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    FAIL_RED =  '\033[91m'
+    HEADER_MAGENTA = '\033[95m'
+    WARNING_YELLOW = '\033[93m'
