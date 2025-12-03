@@ -110,10 +110,11 @@ def main_single_lane_following():
                     # Update simulation time
                     sim_t += Dt
                     spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t) # Get target speed and distance at current time
-                    if not use_preview:
-                        front_s_t[0] = round(traffic_manager.traffic_s[0])
-                        front_v_t[0] = round(traffic_manager.traffic_v[0])
-                        front_a_t[0] = traffic_manager.traffic_alon[0]
+                    
+                    # Update the virtual traffic vehicle states
+                    front_s_t[0] = round(traffic_manager.traffic_s[0])
+                    front_v_t[0] = round(traffic_manager.traffic_v[0])
+                    front_a_t[0] = traffic_manager.traffic_alon[0]
 
                     # Find the states for next few time steps
                     for i in range(1, 20):
