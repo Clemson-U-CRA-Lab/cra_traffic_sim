@@ -25,7 +25,7 @@ for i = 0:1:2
     t = [t; data_selected(:, 1) + t(end)];
     spd = [spd; data_selected(:, 2)];
     acc = [acc; data_selected(:, 3)];
-    dist = [dist; data_selected(:, 4)];
+    dist = [dist; data_selected(:, 4) + dist(end)];
 end
 
 figure(1)
