@@ -25,7 +25,7 @@ subplot(3,1,3)
 plot(t, s)
 
 %%  Generate new spd profile from acceleration data
-vv = smoothdata(v, 'gaussian', 25);
+vv = smoothdata(v, 'gaussian', 50);
 aa = [0; diff(vv)./dt];
 ss = cumsum(vv * dt);
 
@@ -60,4 +60,4 @@ plot(t_clip, s_clip)
 
 %%  Save the data
 data_to_save = [t_clip, v_clip, a_clip, s_clip];
-writematrix(data_to_save, strcat([spd_profile_name,'_ITIC_HAMPC.csv']));
+writematrix(data_to_save, strcat([spd_profile_name,'_sec_2.csv']));
