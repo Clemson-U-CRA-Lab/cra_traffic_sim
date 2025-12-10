@@ -171,6 +171,23 @@ class CMI_traffic_sim:
         self.traffic_alon[vehicle_id] = a_t
         self.traffic_s[vehicle_id] = s_t
     
+    def traffic_brake_status_update(self, vehicle_id):
+        # Calculate air resistance
+        f_air = 0.5 * 1.225 * 0.28 * 2.6 * self.traffic_v[vehicle_id] ** 2; # air resistance
+        # Calculate rolling resistance
+        f_roll = 0.015 * 2250 * 9.81; # rolling resistance
+        # Calculate total resistance
+        f_total = f_air + f_roll
+        # Calculate acceleration due to resistance
+        a_resistance = -f_total / 2250
+        # Calculate human brake acceleration
+        a_forward_acceleration = self.traffic_alon[vehicle_id] + a_resistance
+        # Update brake status
+        if (a_forward_acceleration < -0.1):
+            self.traffic_brake_status[vehicle_id] = True
+        else:
+            self.traffic_brake_status[vehicle_id] = False
+    
     def ego_vehicle_frenet_update(self, s, l, sv, lv, yaw_s):
         self.ego_s = s
         self.ego_l = l

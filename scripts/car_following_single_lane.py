@@ -160,10 +160,9 @@ def main_single_lane_following():
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                         
                         # Update virtual traffic braking status
-                        if traffic_manager.traffic_alon[i] <= 0:
-                            virtual_vehicle_brake = True
-                        else:
-                            virtual_vehicle_brake = False
+                        traffic_manager.traffic_brake_status_update(vehicle_id=i)
+                        virtual_vehicle_brake = traffic_manager.traffic_brake_status[i]
+                        
                         # Update virtual traffic simulation information
                         virtual_traffic_sim_info_manager.update_virtual_vehicle_state(vehicle_id=i,
                                                                                    x=local_traffic_vehicle_poses[0],
