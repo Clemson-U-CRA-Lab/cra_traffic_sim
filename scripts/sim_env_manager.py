@@ -195,11 +195,11 @@ class CMI_traffic_sim:
         # self.ego_lv = lv
         self.ego_yaw_s = yaw_s
     
-    def ego_acceleration_pitch_update(self, vehicle_id, pitch_max, pitch_min, acc_max, acc_min):
-        if (self.traffic_alon[vehicle_id] >= 0):
-            acc_incited_pitch = pitch_max * (self.traffic_alon[vehicle_id] / acc_max)
+    def ego_acceleration_pitch_update(self, pitch_max, pitch_min, acc_max, acc_min):
+        if (self.ego_acc >= 0):
+            acc_incited_pitch = pitch_max * (self.ego_acc / acc_max)
         else:
-            acc_incited_pitch = pitch_min * (self.traffic_alon[vehicle_id] / acc_min)
+            acc_incited_pitch = pitch_min * (self.ego_acc / acc_min)
         return acc_incited_pitch
     
     def construct_vehicle_state_sequence_msg(self, id, t, s, v, a, sim_start):

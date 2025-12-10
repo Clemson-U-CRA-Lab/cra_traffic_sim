@@ -145,8 +145,8 @@ def main_single_lane_following():
                                                                         a_t=acc_t, 
                                                                         vehicle_id=i)
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
-                        ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(vehicle_id=i, pitch_max=3 / RAD_TO_DEGREE, 
-                                                                                                            pitch_min=-4 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-4.0)
+                        ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
+                                                                                                            pitch_min=-2 / RAD_TO_DEGREE, acc_max=3.0, acc_min=-5.0)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4] + ego_vehicle_pitch_from_acceleration]
