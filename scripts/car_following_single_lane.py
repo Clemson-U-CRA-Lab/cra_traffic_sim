@@ -2,7 +2,7 @@
 
 import rospy
 from std_msgs.msg import Float64MultiArray
-from hololens_ros_communication.msg import hololens_info
+from hololens_ros_communication.msg import ref_traj_correction
 from std_msgs.msg import Float64MultiArray, Int8
 
 
@@ -16,6 +16,14 @@ from utils import *
 # Define constants
 RAD_TO_DEGREE = 52.296
 
+def road_reference_correction_msg_prep(ego_pitch):
+    road_ref_correction_msg = ref_traj_correction()
+    road_ref_correction_msg.road_ref_x = 0.0
+    road_ref_correction_msg.road_ref_y = 0.0
+    road_ref_correction_msg.road_ref_z = 0.0
+    road_ref_correction_msg.road_ref_pitch = ego_pitch
+    road_ref_correction_msg.road_ref_yaw = 0.0
+    return road_ref_correction_msg
 
 def main_single_lane_following():
     # Path Parameters
@@ -53,8 +61,10 @@ def main_single_lane_following():
     traffic_map_manager.read_speed_profile()
     dir_msg_publisher = rospy.Publisher('/runDirection', Int8, queue_size=2)
     lowlevel_heartbeat_publisher = rospy.Publisher('/low_level_heartbeat', Int8, queue_size=2)
+    road_ref_pub = rospy.Publisher('/ref_traj_correction', ref_traj_correction, queue_size=2)
 
     msg_counter = 0
+    ego_vehicle_pitch_from_acceleration = 0.0
     # start_t = time.time()
     prev_t = time.time()
     sim_t = 0.0
@@ -146,10 +156,10 @@ def main_single_lane_following():
                                                                         vehicle_id=i)
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                         ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
-                                                                                                            pitch_min=-2 / RAD_TO_DEGREE, acc_max=3.0, acc_min=-5.0)
+                                                                                                            pitch_min=-2 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-6.0)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
-                                             ego_vehicle_ref_poses[4] + ego_vehicle_pitch_from_acceleration]
+                                             ego_vehicle_ref_poses[4]]
 
                         # Find ego vehicle pose on frenet coordinate
                         _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref,
@@ -217,6 +227,9 @@ def main_single_lane_following():
             traffic_manager.publish_traffic_sim_info()
             traffic_manager.publish_vehicle_traj()
 
+            # Publish road reference correction message
+            road_ref_correction_msg = road_reference_correction_msg_prep(ego_vehicle_pitch_from_acceleration)
+            road_ref_pub.publish(road_ref_correction_msg)
             
         except IndexError:
             print('Index error detected.')
