@@ -60,8 +60,6 @@ class preceding_vehicle_spd_profile_generation():
         for i in range(1, self.h):
             # Add ttci tracking cost
             cost += 10*((s[1, i] - self.ego_v[i]) - ttc_i_ref * (s[0, i] - self.ego_s[i]))**2
-            # Add target speed tracking cost
-            # cost += (s[1, i] - dv_tgt)**2
             # Add acceleration cost
             cost += u[i-1]**2
             # Add slack variables
@@ -101,20 +99,20 @@ class preceding_vehicle_spd_profile_generation():
 if __name__ == "__main__":
     horizon_length = 10
     time_interval = 0.5
-    v_max = 30.0
+    v_max = 15.0
     v_min = 0.0
     a_max = 3.0
     a_min = -4.0
     
-    front_v = 4.0
+    front_v = 14.0
     front_a = 0.0
-    front_s = 35.0
+    front_s = 75.0
     
-    ego_v = 5.0
+    ego_v = 14.0
     ego_a = 0.0
-    ego_s = 0.0
+    ego_s = 50.0
     
-    ttc_i_ref = -0.15
+    ttc_i_ref = 0.25
     
     pv_spd_profile_gen = preceding_vehicle_spd_profile_generation(horizon_length, time_interval)
     
@@ -136,7 +134,7 @@ if __name__ == "__main__":
     
     plt.subplot(2, 2, 2)
     plt.plot(pv_spd_profile_gen.pv_s_opt - pv_spd_profile_gen.ego_s, label='Distance Gap (PV - Ego)')
-    plt.ylabel('Position (m)')
+    plt.ylabel('Distance (m)')
     plt.title('Preceding Vehicle and Ego Vehicle Position Profiles')
     plt.legend()
     

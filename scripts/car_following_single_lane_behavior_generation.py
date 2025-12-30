@@ -1,0 +1,243 @@
+#! /usr/bin/env python3
+
+import rospy
+from std_msgs.msg import Float64MultiArray
+from hololens_ros_communication.msg import ref_traj_correction
+from std_msgs.msg import Float64MultiArray, Int8
+
+
+import time
+import numpy as np
+import math
+import os
+from sim_env_manager import *
+from utils import *
+
+# Define constants
+RAD_TO_DEGREE = 52.296
+
+def road_reference_correction_msg_prep(ego_pitch):
+    road_ref_correction_msg = ref_traj_correction()
+    road_ref_correction_msg.road_ref_x = 0.0
+    road_ref_correction_msg.road_ref_y = 0.0
+    road_ref_correction_msg.road_ref_z = 0.0
+    road_ref_correction_msg.road_ref_pitch = ego_pitch
+    road_ref_correction_msg.road_ref_yaw = 0.0
+    return road_ref_correction_msg
+
+def main_single_lane_following():
+    # Path Parameters
+    current_dirname = os.path.dirname(__file__)
+    parent_dir = os.path.abspath(os.path.join(current_dirname, os.pardir))
+
+    num_Sv = rospy.get_param("/num_vehicles")
+    track_style = rospy.get_param("/track_style")
+
+    if track_style == "GrandPrix":
+        closed_loop = True
+    if track_style == "Rally":
+        closed_loop = False
+
+    map_filename = rospy.get_param("/map")
+    spd_filename = rospy.get_param("/spd_map")
+    run_sim = bool(rospy.get_param("/run_sim"))
+    pv_dt = float(rospy.get_param("/pv_states_dt"))
+    use_preview = bool(rospy.get_param("/use_preview"))
+    run_direction = rospy.get_param("/runDirection")
+
+    map_1_file = os.path.join(parent_dir, "maps", map_filename)
+    spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
+    print('PV speed pfofile is: ' , spd_file)
+
+    rospy.init_node("CRA_Digital_Twin_Traffic")
+    rate = rospy.Rate(100)
+
+    traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
+    virtual_traffic_sim_info_manager = hololens_message_manager(
+        num_vehicles=1, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
+    traffic_map_manager = road_reader(
+        map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
+    front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(horizon_length=16, time_interval=pv_dt)
+    
+    traffic_map_manager.read_map_data()
+    traffic_map_manager.read_speed_profile()
+    
+    dir_msg_publisher = rospy.Publisher('/runDirection', Int8, queue_size=2)
+    lowlevel_heartbeat_publisher = rospy.Publisher('/low_level_heartbeat', Int8, queue_size=2)
+    road_ref_pub = rospy.Publisher('/ref_traj_correction', ref_traj_correction, queue_size=2)
+
+    msg_counter = 0
+    ego_vehicle_pitch_from_acceleration = 0.0
+    # start_t = time.time()
+    prev_t = time.time()
+    sim_t = 0.0
+    ego_s_init = 0.0
+    init_gap = 8.0
+
+    while not rospy.is_shutdown():
+        try:
+            # Find time interval for current loop
+            Dt = time.time() - prev_t
+            # Refresh previous frame time
+            prev_t = time.time()
+            
+            # Add traffic information to simulation managment class
+            traffic_manager.serial_id = msg_counter
+            virtual_traffic_sim_info_manager.update_ego_state(serial_id=traffic_manager.serial_id,
+                                                              ego_x=traffic_manager.ego_x,
+                                                              ego_y=traffic_manager.ego_y,
+                                                              ego_z=traffic_manager.ego_z,
+                                                              ego_yaw=traffic_manager.ego_yaw,
+                                                              ego_pitch=traffic_manager.ego_pitch,
+                                                              ego_v=traffic_manager.ego_v,
+                                                              ego_acc=traffic_manager.ego_acc,
+                                                              ego_omega=traffic_manager.ego_omega)
+            
+            s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
+            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
+            
+            # Initialize future states sequence
+            front_s_t = [0.0] * 40
+            front_v_t = [0.0] * 40
+            front_a_t = [0.0] * 40
+
+            run_dir_msg = Int8()
+            run_dir_msg.data = run_direction
+            dir_msg_publisher.publish(run_dir_msg)
+            
+            # Publish lowlevel heartbeat
+            lowlevel_heartbeat_msg = Int8()
+            lowlevel_heartbeat_msg.data = 1
+            lowlevel_heartbeat_publisher.publish(lowlevel_heartbeat_msg)
+            
+            # Initialize the traffic simulation
+            if (sim_t < 0.5 and traffic_manager.sim_start):
+                # Update simulation time
+                sim_t += Dt
+                # Find initial distance as start distance on the map
+                traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=init_gap, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
+                ego_s_init = s_ego_frenet
+                continue
+            else:
+                msg_counter += 1
+                if traffic_manager.sim_start:
+                    # Update simulation time
+                    sim_t += Dt
+                    
+                    # Find front vehicle states for future horizon
+                    front_vehicle_motion_generator.update_ego_vehicle_state(ego_a_t=traffic_manager.ego_acc,
+                                                                            ego_v_t=traffic_manager.ego_v,
+                                                                            ego_s_t=traffic_manager.ego_s,
+                                                                            pv_a_t=traffic_manager.traffic_alon[0],
+                                                                            pv_v_t=traffic_manager.traffic_v[0],
+                                                                            pv_s_t=traffic_manager.traffic_s[0])
+                    if traffic_manager.ego_v < traffic_manager.traffic_v[0]:
+                        ttc_i_ref = 0.15
+                    else:
+                        ttc_i_ref = -0.15
+                        
+                    front_vehicle_motion_generator.perform_nonlinear_optimization_for_pv_spd(ttc_i_ref=ttc_i_ref,
+                                                                                             v_max = 15.0,
+                                                                                             v_min=0.0,
+                                                                                             a_max=3.0,
+                                                                                             a_min=-5.0)
+                    
+                    traffic_manager.traffic_alon[0] = front_vehicle_motion_generator.pv_a_opt[0]
+                    traffic_manager.traffic_v[0] += traffic_manager.traffic_v[0] * Dt + 0.5 * traffic_manager.traffic_alon[0] * Dt**2
+                    traffic_manager.traffic_s[0] += traffic_manager.traffic_s[0] + traffic_manager.traffic_v[0] * Dt + 0.5 * traffic_manager.traffic_alon[0] * Dt**2 
+                    # Find virtual traffic global poses
+                    for i in range(num_Sv):
+                        # traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
+                        # traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + ego_s_init + init_gap, 
+                        #                                                 v_t=spd_t, 
+                        #                                                 a_t=acc_t, 
+                        #                                                 vehicle_id=i)
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                        ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
+                                                                                                            pitch_min=-2 / RAD_TO_DEGREE, 
+                                                                                                            acc_max=4.0, 
+                                                                                                            acc_min=-6.0)
+                        ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                             ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                             ego_vehicle_ref_poses[4]]
+
+                        # Find ego vehicle pose on frenet coordinate
+                        _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref,
+                                                                                                       ego_yaw=ego_vehicle_poses[3],
+                                                                                                       vy=traffic_manager.ego_v_north,
+                                                                                                       vx=traffic_manager.ego_v_east)
+
+                        traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
+                        
+                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
+                        
+                        # Update virtual traffic braking status
+                        traffic_manager.traffic_brake_status_update(vehicle_id=i)
+                        virtual_vehicle_brake = traffic_manager.traffic_brake_status[i]
+                        
+                        # Update virtual traffic simulation information
+                        virtual_traffic_sim_info_manager.update_virtual_vehicle_state(vehicle_id=i,
+                                                                                   x=local_traffic_vehicle_poses[0],
+                                                                                   y=-local_traffic_vehicle_poses[1], # Transfer to right hand coordinate
+                                                                                   z=local_traffic_vehicle_poses[2],
+                                                                                   yaw=-local_traffic_vehicle_poses[3], # Transfer to right hand coordinate
+                                                                                   pitch=-local_traffic_vehicle_poses[4], # Transfer to right hand coordinate
+                                                                                   acc=traffic_manager.traffic_alon[i],
+                                                                                   vx=traffic_manager.traffic_v[i],
+                                                                                   vy=0.0,
+                                                                                   brake_status=virtual_vehicle_brake)
+
+                else:
+                    for i in range(num_Sv):
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet)
+                        ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                             ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                             ego_vehicle_ref_poses[4]]
+                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
+                        # Update virtual traffic braking status
+                        if traffic_manager.traffic_alon[i] <= 0:
+                            virtual_vehicle_brake = True
+                        else:
+                            virtual_vehicle_brake = False
+                        # Update virtual traffic simulation information
+                        virtual_traffic_sim_info_manager.update_virtual_vehicle_state(vehicle_id=i,
+                                                                                   x=local_traffic_vehicle_poses[0],
+                                                                                   y=-local_traffic_vehicle_poses[1], # Transfer to right hand coordinate
+                                                                                   z=local_traffic_vehicle_poses[2],
+                                                                                   yaw=-local_traffic_vehicle_poses[3], # Transfer to right hand coordinate
+                                                                                   pitch=-local_traffic_vehicle_poses[4], # Transfer to right hand coordinate
+                                                                                   acc=traffic_manager.traffic_alon[i],
+                                                                                   vx=traffic_manager.traffic_v[i],
+                                                                                   vy=0.0,
+                                                                                   brake_status=virtual_vehicle_brake)
+                    
+            # Publish the traffic information
+            # Construct the ROS message
+            virtual_traffic_sim_info_manager.construct_hololens_info_msg()
+            traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
+            traffic_manager.construct_vehicle_state_sequence_msg(id=msg_counter, 
+                                                                 t=sim_t, 
+                                                                 s=front_s_t, 
+                                                                 v=front_v_t, 
+                                                                 a=front_a_t, 
+                                                                 sim_start=traffic_manager.sim_start)
+
+            # Publish the ROS message
+            virtual_traffic_sim_info_manager.publish_virtual_sim_info()
+            traffic_manager.publish_traffic_sim_info()
+            traffic_manager.publish_vehicle_traj()
+
+            # Publish road reference correction message
+            road_ref_correction_msg = road_reference_correction_msg_prep(ego_vehicle_pitch_from_acceleration)
+            road_ref_pub.publish(road_ref_correction_msg)
+            
+        except IndexError:
+            print('Index error detected.')
+        except RuntimeError:
+            print('Runtime error detected.')
+
+        rate.sleep()
+
+
+if __name__ == "__main__":
+    main_single_lane_following()
