@@ -17,11 +17,11 @@ class IDM():
 
     def IDM_acceleration(self, front_v, ego_v, front_s, ego_s):
         s_safe = self.s0 + ego_v * self.T + front_v * (ego_v - front_v) / (2 * (self.a * self.b)**0.5)
-        s_safe[s_safe < self.s0 + 3] = self.s0 + 3
+        # s_safe[s_safe < self.s0 + 3] = self.s0 + 3
         acc = self.a * (1 - (ego_v / self.v0) ** 4 -
                         (s_safe / (front_s - ego_s - self.s0)) ** 2)
         acc = np.clip(acc, -4, 4)
-        return acc
+        return [acc]
 
 class Model(nn.Module):
     def __init__(self, in_features=3, h1=256, h2=256, h3=32, out_features=1):
@@ -64,8 +64,8 @@ class NN_controller():
     def step_forward(self, s_vt, pv_vt, s_st, pv_st, s_at, pv_at, use_prediction_horizon, sim_t):
         ttc_i = TTCi_estimate(ego_v=s_vt, front_v=pv_vt, front_s=pv_st - s_st)
         # Calculate the prediction horizon length
-        pv_s_end = np.zeros(pv_st.shape)
-        pv_v_end = np.zeros(pv_vt.shape)
+        pv_s_end = np.zeros(1)
+        pv_v_end = np.zeros(1)
         a_input = np.array(pv_at)
         a = np.tile(a_input, (49, 1))
         v = pv_vt + np.cumsum(a * 0.5, axis=0)
@@ -83,7 +83,7 @@ class NN_controller():
                 # nn_input_vec = np.array([s_vt, 
                 #                          np.exp(-(pv_v_end - c_dv) / (2 * sig_dv)), 
                 #                          np.exp(-(pv_s_end - c_ds) / (2 * sig_ds))])
-                nn_input_vec = np.array([s_vt, pv_v_end, pv_s_end])
+                nn_input_vec = np.array([s_vt, pv_v_end[0], pv_s_end[0]])
             else:
                 nn_input_vec = np.array([s_vt, pv_vt - s_vt, pv_st - s_st])
         if self.num_input == 4:
@@ -95,14 +95,14 @@ class NN_controller():
             s_a_nn = ego_a_nn.flatten().tolist()
             
         # Compute intelligent driver model control
-        s_a_IDM = self.IDM_brake.IDM_acceleration(front_v=pv_vt, ego_v=s_vt, front_s=pv_st, ego_s=s_st)
+        # s_a_IDM = self.IDM_brake.IDM_acceleration(front_v=pv_vt, ego_v=s_vt, front_s=pv_st, ego_s=s_st)
         
-        # Check the if IDM braking is needed
-        if len(s_a_IDM) > 0:
-            det = ((ttc_i > 0.25) * (pv_st - s_st < 15)).astype(bool)
-            IDM_w = det.astype(float)
-            ego_a_tgt = IDM_w * s_a_IDM + (1.0 - IDM_w) * s_a_nn
-        else:
-            ego_a_tgt = None
+        # # Check the if IDM braking is needed
+        # if len(s_a_IDM) > 0:
+        #     det = ((ttc_i > 0.25) * (pv_st - s_st < 15)).astype(bool)
+        #     IDM_w = det.astype(float)
+        #     ego_a_tgt = IDM_w * s_a_IDM + (1.0 - IDM_w) * s_a_nn
+        # else:
+        #     ego_a_tgt = None
             
-        return ego_a_tgt
+        return ego_a_nn.flatten().tolist()[0]
