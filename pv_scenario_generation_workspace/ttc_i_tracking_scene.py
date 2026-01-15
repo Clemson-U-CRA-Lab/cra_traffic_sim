@@ -63,7 +63,7 @@ class preceding_vehicle_spd_profile_generation():
             # Add ttci tracking cost
             cost += 100*((s[1, i] - self.ego_v[i]) - ttc_i_ref*(s[0, i] - self.ego_s[i]))**2
             # Add acceleration cost
-            cost += 10*u[i-1]**2
+            cost += 1*u[i-1]**2
             # Add slack variables
             cost += 1e6*(e_spd[i]**2 + e_ds[i]**2)
             
@@ -99,22 +99,23 @@ class preceding_vehicle_spd_profile_generation():
         # print("Solution found!")
 
 if __name__ == "__main__":
-    horizon_length = 20
+    horizon_length = 16
     time_interval = 0.5
     v_max = 30.0
     v_min = 0.0
     a_max = 4.0
     a_min = -6.0
-    
-    front_v = 10.0
+
+    front_v = 5.5
     front_a = 0.0
-    front_s = 15.0
+    front_s = 8.0
     
-    ego_v = 9.0
-    ego_a = 0.5
+    ego_v = 5.0
+    ego_a = 0.0
     ego_s = 0.0
     
     pv_spd_profile_gen = preceding_vehicle_spd_profile_generation(horizon_length, time_interval)
+    
     # Initialize nn_controller here if needed
     current_dirname = os.path.dirname(__file__)
     nn_pt_filename = current_dirname + '/traffic_following_control_dc_trained.pt'
@@ -124,20 +125,21 @@ if __name__ == "__main__":
     sim_end_T = 30.0
     dT = 0.1
     
-    pv_a_log = []
-    pv_v_log = []
-    pv_s_log = []
-    ego_a_log = []
-    ego_v_log = []
-    ego_s_log = []
-    ttc_i_log = []
-    ttc_i_ref_log = []
+    pv_a_log = [front_a]
+    pv_v_log = [front_v]
+    pv_s_log = [front_s]
+    ego_a_log = [ego_a]
+    ego_v_log = [ego_v]
+    ego_s_log = [ego_s]
+    ttc_i_log = [(front_v - ego_v) / (front_s - ego_s)]
+    ttc_i_ref_log = [0.1534 / (1 + np.exp(0.195 * (front_s - ego_s - 18.36)))]
     
     while sim_T < sim_end_T:
         sim_T += dT
-        # Generate ttc_i reference profile
+        print("Simulation time:", round(sim_T, 2), "s", end='\r')
         ttc_i_ref = 0.1534 / (1 + np.exp(0.195 * (front_s - ego_s - 18.36)))
         ttc_i_ref_log.append(ttc_i_ref)
+        
         # Generation front vehicle acceleration
         pv_spd_profile_gen.update_ego_vehicle_state(ego_a, ego_v, ego_s, front_a, front_v, front_s)
         pv_spd_profile_gen.perform_nonlinear_optimization_for_pv_spd(ttc_i_ref, v_max=v_max, v_min=v_min, a_max=a_max, a_min=a_min)
@@ -148,6 +150,7 @@ if __name__ == "__main__":
                                              s_st=ego_s, pv_st=front_s,
                                              s_at=ego_a, pv_at=front_a,
                                              use_prediction_horizon=True, sim_t=sim_T)
+        
         # Add filter to ego_a
         ego_a = ego_a + 0.5 * (ego_a_t - ego_a)
         
@@ -169,7 +172,7 @@ if __name__ == "__main__":
     print("Simulation completed.")
     
     # Plot result in four subplots: ego speed & pv_speed vs time, distance gap vs time, ego acceleration & pv_acceleration vs time, ttc_i vs time
-    time_log = np.arange(0, sim_end_T, dT)
+    time_log = np.arange(0, sim_end_T+dT, dT)
     plt.figure(figsize=(12, 10))
     plt.subplot(4, 1, 1)
     plt.plot(time_log, pv_v_log, label='Preceding Vehicle Speed')
@@ -188,7 +191,6 @@ if __name__ == "__main__":
     plt.subplot(4, 1, 3)
     plt.plot(time_log, pv_a_log, label='Preceding Vehicle Acceleration')
     plt.plot(time_log, ego_a_log, label='Ego Vehicle Acceleration')
-    plt.xlabel('Time (s)')
     plt.ylabel('Acceleration (m/s²)')
     plt.title('Preceding Vehicle and Ego Vehicle Acceleration Profiles')
     plt.legend()
