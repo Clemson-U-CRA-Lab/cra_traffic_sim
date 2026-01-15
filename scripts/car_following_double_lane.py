@@ -54,7 +54,7 @@ def main_single_lane_following():
 
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
     virtual_traffic_sim_info_manager = hololens_message_manager(
-        num_vehicles=1, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
+        num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
     traffic_map_manager = road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     traffic_map_manager.read_map_data()
@@ -91,7 +91,7 @@ def main_single_lane_following():
                                                               ego_omega=traffic_manager.ego_omega)
             
             s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
-            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
+            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet, lane_id=0)
             # Initialize future states sequence
             front_s_t = [0.0] * 40
             front_v_t = [0.0] * 40
@@ -123,44 +123,47 @@ def main_single_lane_following():
                 if traffic_manager.sim_start:
                     # Update simulation time
                     sim_t += Dt
-                    spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t) # Get target speed and distance at current time
-                    
-                    # Update the virtual traffic vehicle states
-                    front_s_t[0] = round(traffic_manager.traffic_s[0])
-                    front_v_t[0] = round(traffic_manager.traffic_v[0])
-                    front_a_t[0] = traffic_manager.traffic_alon[0]
-
-                    # Find the states for next few time steps
-                    for i in range(1, 20):
-                        if not use_preview:
-                            if front_v_t[i - 1] >= 20:
-                                front_a_t[i] = 0
-                                front_v_t[i] = 20
-                            
-                            if front_v_t[i - 1] <= 0:
-                                front_a_t[i] = 0
-                                front_v_t[i] = 0
-                            
-                            front_s_t[i] = round(front_s_t[i - 1] + front_v_t[i - 1] * pv_dt + 0.5 * front_a_t[i - 1] * pv_dt ** 2, 2)
-                            front_v_t[i] = round(np.clip(front_v_t[i - 1] + front_a_t[i - 1] * pv_dt, 0, 20), 2)
-                            front_a_t[i] = front_a_t[i - 1]
-                        else:
-                            sim_dt = i * pv_dt
-                            v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(dt=sim_dt, sim_t=sim_t)
-                            front_s_t[i] = round(s_t + ego_s_init + init_gap, 3)
-                            front_v_t[i] = round(v_t, 3)
-                            front_a_t[i] = round(a_t, 3)
-
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
                         # traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                        traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + ego_s_init + init_gap, 
-                                                                        v_t=spd_t, 
-                                                                        a_t=acc_t, 
-                                                                        vehicle_id=i)
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                        if i == 0:
+                            spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t) # Get target speed and distance at current time
+                            # Update the virtual traffic vehicle states
+                            front_s_t[0] = round(traffic_manager.traffic_s[0])
+                            front_v_t[0] = round(traffic_manager.traffic_v[0])
+                            front_a_t[0] = traffic_manager.traffic_alon[0]
+
+                            # Find the states for next few time steps
+                            for j in range(1, 20):
+                                if not use_preview:
+                                    if front_v_t[j - 1] >= 20:
+                                        front_a_t[j] = 0
+                                        front_v_t[j] = 20
+                                    if front_v_t[j - 1] <= 0:
+                                        front_a_t[j] = 0
+                                        front_v_t[j] = 0
+
+                                    front_s_t[j] = round(front_s_t[j - 1] + front_v_t[j - 1] * pv_dt + 0.5 * front_a_t[j - 1] * pv_dt ** 2, 2)
+                                    front_v_t[j] = round(np.clip(front_v_t[j - 1] + front_a_t[j - 1] * pv_dt, 0, 20), 2)
+                                    front_a_t[j] = front_a_t[j - 1]
+                                else:
+                                    sim_dt = j * pv_dt
+                                    v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(dt=sim_dt, sim_t=sim_t)
+                                    front_s_t[j] = round(s_t + ego_s_init + init_gap, 3)
+                                    front_v_t[j] = round(v_t, 3)
+                                    front_a_t[j] = round(a_t, 3)
+
+                            traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + ego_s_init + init_gap, 
+                                                                            v_t=spd_t, 
+                                                                            a_t=acc_t, 
+                                                                            vehicle_id=i)
+                            traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i], lane_id=0)
+                        else:
+                            traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i], lane_id=1)
+                            
                         ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
-                                                                                                            pitch_min=-2 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-6.0)
+                                                                                                            pitch_min=-2 / RAD_TO_DEGREE, 
+                                                                                                            acc_max=4.0, acc_min=-6.0)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
@@ -170,7 +173,7 @@ def main_single_lane_following():
                                                                                                        ego_yaw=ego_vehicle_poses[3],
                                                                                                        vy=traffic_manager.ego_v_north,
                                                                                                        vx=traffic_manager.ego_v_east)
-
+                        
                         traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
                         
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
@@ -193,7 +196,7 @@ def main_single_lane_following():
 
                 else:
                     for i in range(num_Sv):
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet)
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet, lane_id=0)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]

@@ -290,7 +290,7 @@ class road_reader:
                 self.dist.append(line_data[3])
                 line_data = []
 
-    def find_traffic_vehicle_poses(self, dist_travelled):
+    def find_traffic_vehicle_poses(self, dist_travelled, lane_id):
         dist_map = np.array(self.s)
         id_virtual = np.argmin(np.abs(dist_travelled - dist_map))
         ds = dist_travelled - self.s[id_virtual]
@@ -307,7 +307,7 @@ class road_reader:
         k = np.abs(ds / dist_between_map_poses)
 
         traffic_x = self.x[id_virtual] * (1 - k) + self.x[id_adjacent] * k
-        traffic_y = self.y[id_virtual] * (1 - k) + self.y[id_adjacent] * k
+        traffic_y = (self.y[id_virtual] + lane_id * 3.8) * (1 - k) + (self.y[id_virtual] + lane_id * 3.8) * k
         traffic_z = self.z[id_virtual] * (1 - k) + self.z[id_adjacent] * k
         traffic_yaw = self.yaw[id_virtual]
         traffic_pitch = self.pitch[id_virtual]

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="pv_speed_profile" default="I85_ftp1_ITIC_HAMPC.csv" />
+    <arg name="dir" default="0"/>
+    <arg name="use_preview" default="1"/>
+    <arg name="sim_run" default="0"/>
+    <arg name="site_map" default="custom_map_dir0.csv"/>
+
+    <param name="runDirection" value="$(arg dir)"/>
+    <param name="run_sim" value="$(arg sim_run)"/>
+    <param name="map" value="$(arg site_map)"/>
+    <param name="spd_map" value="$(arg pv_speed_profile)"/>
+    <param name="num_vehicles" value="10"/>
+    <param name="pv_states_dt" value="0.5"/>
+    <param name="use_preview" value="$(arg use_preview)"/>
+    <param name="track_style" value="Rally"/>
+    <node pkg="cra_traffic_sim" type="car_following_double_lane.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
+    <node pkg="joy" type="joy_node" name="joy_node" output="screen" />
+    <group if="$(arg sim_run)">
+        <node pkg="cra_traffic_sim" type="anl_sim.py" name="anl_sim" output="screen" />
+    </group>
+
+    <!-- <include file="$(find hololens_ros_communication)/launch/hololens_sender.launch" /> -->
+    <!-- <node pkg="low_level_bridge" name="bridge" type="bridge_KF_lanechange_MachE.py" output="screen"/> -->
+</launch>
