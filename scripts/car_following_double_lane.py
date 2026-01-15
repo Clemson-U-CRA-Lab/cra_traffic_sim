@@ -53,10 +53,9 @@ def main_single_lane_following():
     rate = rospy.Rate(100)
 
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
-    virtual_traffic_sim_info_manager = hololens_message_manager(
-        num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
-    traffic_map_manager = road_reader(
-        map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
+    virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
+    traffic_map_manager = road_reader(map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
+    IDM_control = IDM(a=3, b=5, s0=5, v0=30, T=4)
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
     dir_msg_publisher = rospy.Publisher('/runDirection', Int8, queue_size=2)
@@ -65,7 +64,6 @@ def main_single_lane_following():
 
     msg_counter = 0
     ego_vehicle_pitch_from_acceleration = 0.0
-    # start_t = time.time()
     prev_t = time.time()
     sim_t = 0.0
     ego_s_init = 0.0
@@ -159,6 +157,22 @@ def main_single_lane_following():
                                                                             vehicle_id=i)
                             traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i], lane_id=0)
                         else:
+                            # Check it is the leading vehicle in the side lane
+                            if i == num_Sv - 1:
+                                spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t)
+                                traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + init_gap * i + ego_s_init, 
+                                                                                v_t=spd_t, 
+                                                                                a_t=acc_t, 
+                                                                                vehicle_id=i)
+                            else:
+                                # Apply car following controller for side lane vehicles
+                                acc_t = IDM_control.IDM_acceleration(front_v=traffic_manager.traffic_v[i+1],
+                                                                     ego_v=traffic_manager.traffic_v[i],
+                                                                     front_s=traffic_manager.traffic_s[i+1],
+                                                                     ego_s=traffic_manager.traffic_s[i])
+                                if traffic_manager.traffic_v[i] <= 0 and acc_t < 0:
+                                    acc_t = 0.0
+                                traffic_manager.traffic_update_from_acceleration(dt=Dt, a=acc_t, vehicle_id=i)
                             traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i], lane_id=1)
                             
                         ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 

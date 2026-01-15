@@ -92,7 +92,7 @@ class CMI_traffic_sim:
         self.ego_pose_ref = np.zeros((3, 1))
 
         self.traffic_initialized = False
-        self.sim_start = False
+        self.sim_start = True
         
         if sil_simulation:
             self.sub_lowlevel_bridge = rospy.Subscriber('/odom', Odometry, self.odom_callback)
@@ -162,6 +162,16 @@ class CMI_traffic_sim:
         else:
             self.traffic_alon[vehicle_id] = 0
             self.traffic_v[vehicle_id] = v_tgt
+        # Update distance travelled using real-time velocity
+        self.traffic_s[vehicle_id] = self.traffic_s[vehicle_id] + \
+            self.traffic_v[vehicle_id] * dt + 0.5 * \
+            self.traffic_alon[vehicle_id] * dt**2
+    
+    def traffic_update_from_acceleration(self, dt, a, vehicle_id):
+        # Update velocity to match speed profile
+        v_t = a * dt + self.traffic_v[vehicle_id]
+        self.traffic_alon[vehicle_id] = a
+        self.traffic_v[vehicle_id] = v_t
         # Update distance travelled using real-time velocity
         self.traffic_s[vehicle_id] = self.traffic_s[vehicle_id] + \
             self.traffic_v[vehicle_id] * dt + 0.5 * \
