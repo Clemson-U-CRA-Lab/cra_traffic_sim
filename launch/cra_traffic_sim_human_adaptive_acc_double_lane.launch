@@ -20,6 +20,6 @@
         <node pkg="cra_traffic_sim" type="anl_sim.py" name="anl_sim" output="screen" />
     </group>
 
-    <!-- <include file="$(find hololens_ros_communication)/launch/hololens_sender.launch" /> -->
+    <include file="$(find hololens_ros_communication)/launch/hololens_sender.launch" />
     <!-- <node pkg="low_level_bridge" name="bridge" type="bridge_KF_lanechange_MachE.py" output="screen"/> -->
 </launch>

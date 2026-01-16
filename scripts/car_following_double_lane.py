@@ -55,7 +55,7 @@ def main_single_lane_following():
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
     virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
     traffic_map_manager = road_reader(map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
-    IDM_control = IDM(a=3, b=5, s0=5, v0=30, T=4)
+    IDM_control = IDM(a=3, b=5, s0=5, v0=30, T=1)
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
     dir_msg_publisher = rospy.Publisher('/runDirection', Int8, queue_size=2)
@@ -130,7 +130,7 @@ def main_single_lane_following():
                             front_s_t[0] = round(traffic_manager.traffic_s[0])
                             front_v_t[0] = round(traffic_manager.traffic_v[0])
                             front_a_t[0] = traffic_manager.traffic_alon[0]
-
+                            
                             # Find the states for next few time steps
                             for j in range(1, 20):
                                 if not use_preview:

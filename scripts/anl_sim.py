@@ -174,7 +174,7 @@ if __name__ == "__main__":
     # Initialize ros node
     rospy.init_node('anl_sim')
     anl_sim = anl_sim_env(wheelbase=5.0, x_origin=x0, y_origin=y0, gamma=gamma, LaneWidth=3.8)
-    rate = rospy.Rate(100)
+    rate = rospy.Rate(120)
     
     # Message parameters
     msg_id = 0
