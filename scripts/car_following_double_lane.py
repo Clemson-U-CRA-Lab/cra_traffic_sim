@@ -55,7 +55,7 @@ def main_single_lane_following():
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
     virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
     traffic_map_manager = road_reader(map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
-    IDM_control = IDM(a=3, b=5, s0=5, v0=30, T=1)
+    IDM_control = IDM(a=3, b=5, s0=8, v0=30, T=3)
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
     dir_msg_publisher = rospy.Publisher('/runDirection', Int8, queue_size=2)
@@ -90,6 +90,7 @@ def main_single_lane_following():
             
             s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
             ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet, lane_id=0)
+            
             # Initialize future states sequence
             front_s_t = [0.0] * 40
             front_v_t = [0.0] * 40
@@ -113,7 +114,7 @@ def main_single_lane_following():
                 
                 # Add side lane vehicles
                 for veh_id in range(1, num_Sv):
-                    traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=init_gap, line_number=1, vehicle_id=veh_id, vehicle_id_in_lane=veh_id-1)
+                    traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=init_gap, line_number=1, vehicle_id=veh_id, vehicle_id_in_lane=veh_id-2)
                 ego_s_init = s_ego_frenet
                 continue
             else:
@@ -140,7 +141,7 @@ def main_single_lane_following():
                                     if front_v_t[j - 1] <= 0:
                                         front_a_t[j] = 0
                                         front_v_t[j] = 0
-
+                                        
                                     front_s_t[j] = round(front_s_t[j - 1] + front_v_t[j - 1] * pv_dt + 0.5 * front_a_t[j - 1] * pv_dt ** 2, 2)
                                     front_v_t[j] = round(np.clip(front_v_t[j - 1] + front_a_t[j - 1] * pv_dt, 0, 20), 2)
                                     front_a_t[j] = front_a_t[j - 1]

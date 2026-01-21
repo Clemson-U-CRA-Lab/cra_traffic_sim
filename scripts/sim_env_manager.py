@@ -92,7 +92,7 @@ class CMI_traffic_sim:
         self.ego_pose_ref = np.zeros((3, 1))
 
         self.traffic_initialized = False
-        self.sim_start = True
+        self.sim_start = False
         
         if sil_simulation:
             self.sub_lowlevel_bridge = rospy.Subscriber('/odom', Odometry, self.odom_callback)
@@ -269,6 +269,7 @@ class road_reader:
         self.cmi_road_file = map_filename
         self.speed_profile_file = speed_profile_filename
         self.grand_prix_style = closed_track
+        self.lane_width = 4.2
 
     def read_map_data(self):
         with open(self.cmi_road_file) as csv_file:
@@ -317,7 +318,7 @@ class road_reader:
         k = np.abs(ds / dist_between_map_poses)
 
         traffic_x = self.x[id_virtual] * (1 - k) + self.x[id_adjacent] * k
-        traffic_y = (self.y[id_virtual] + lane_id * 3.8) * (1 - k) + (self.y[id_virtual] + lane_id * 3.8) * k
+        traffic_y = (self.y[id_virtual] + lane_id * self.lane_width) * (1 - k) + (self.y[id_virtual] + lane_id * self.lane_width) * k
         traffic_z = self.z[id_virtual] * (1 - k) + self.z[id_adjacent] * k
         traffic_yaw = self.yaw[id_virtual]
         traffic_pitch = self.pitch[id_virtual]
