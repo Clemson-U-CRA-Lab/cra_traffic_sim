@@ -50,7 +50,7 @@ def main_single_lane_following():
     print('PV speed pfofile is: ' , spd_file)
 
     rospy.init_node("CRA_Digital_Twin_Traffic")
-    rate = rospy.Rate(100)
+    rate = rospy.Rate(1000)
 
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
     virtual_traffic_sim_info_manager = hololens_message_manager(num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
@@ -182,14 +182,8 @@ def main_single_lane_following():
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
-
-                        # Find ego vehicle pose on frenet coordinate
-                        _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref,
-                                                                                                       ego_yaw=ego_vehicle_poses[3],
-                                                                                                       vy=traffic_manager.ego_v_north,
-                                                                                                       vx=traffic_manager.ego_v_east)
                         
-                        traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
+                        traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=0, sv=0, lv=0, yaw_s=0)
                         
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                         
