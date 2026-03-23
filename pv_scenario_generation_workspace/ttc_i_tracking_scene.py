@@ -26,6 +26,58 @@ class preceding_vehicle_spd_profile_generation():
         
         self.ttc_i = 0.0
         
+        # Initialize A, B, C matrices (will be loaded via load_matrices_from_file)
+        self.A = None
+        self.B = None
+        self.C = None
+        
+    def load_matrices_from_file(self, data_folder_path=None):
+        """Load A, B, C matrices from CSV files in the data_driven_workspace folder.
+        
+        Args:
+            data_folder_path (str): Path to the data_driven_workspace folder. 
+                                   If None, uses the default relative path.
+        
+        Returns:
+            tuple: (A, B, C) - numpy arrays containing the loaded matrices
+        """
+        if data_folder_path is None:
+            # Get the directory of the current script
+            current_dirname = os.path.dirname(os.path.abspath(__file__))
+            data_folder_path = os.path.join(current_dirname, 'data_driven_workspace')
+        
+        # Load matrices from CSV files
+        try:
+            A_file = os.path.join(data_folder_path, 'A_14x14_matrix.csv')
+            B_file = os.path.join(data_folder_path, 'B_14x1_matrix.csv')
+            C_file = os.path.join(data_folder_path, 'C_1x14_matrix.csv')
+            
+            self.A = np.loadtxt(A_file, delimiter=',')
+            self.B = np.loadtxt(B_file, delimiter=',')
+            self.C = np.loadtxt(C_file, delimiter=',')
+            
+            # Ensure proper shape for B (should be column vector)
+            if self.B.ndim == 1:
+                self.B = self.B.reshape(-1, 1)
+            
+            # Ensure proper shape for C (should be row vector)
+            if self.C.ndim == 1:
+                self.C = self.C.reshape(1, -1)
+            
+            print(f"Matrices loaded successfully from {data_folder_path}")
+            print(f"A shape: {self.A.shape}, B shape: {self.B.shape}, C shape: {self.C.shape}")
+            
+            return self.A, self.B, self.C
+        
+        except FileNotFoundError as e:
+            print(f"Error: Could not find matrix files in {data_folder_path}")
+            print(f"Details: {e}")
+            return None, None, None
+        except Exception as e:
+            print(f"Error loading matrices: {e}")
+            return None, None, None
+
+        
     def update_ego_vehicle_state(self, ego_a_t, ego_v_t, ego_s_t, pv_a_t, pv_v_t, pv_s_t):
         # Update ego vehicle state over the horizon
         for i in range(self.h):
@@ -98,6 +150,99 @@ class preceding_vehicle_spd_profile_generation():
         
         # print("Solution found!")
 
+    def perform_nonlinear_optimization_for_reward_tracking(self, A, B, C, Q, R, reward_target):
+        """Optimize PV motion to track a target reward using lifted state-space model.
+
+        A: n x n state matrix
+        B: n x m input matrix
+        C: 1 x n reward mapping matrix (or vector)
+        Q: n x n state cost weight matrix (or scalar/diagonal vector)
+        R: m x m control cost weight matrix (or scalar/diagonal vector)
+        reward_target: scalar target reward value
+        """
+        # Convert inputs to numpy and CasADi DM/MX
+        A = np.asarray(A, dtype=float)
+        B = np.asarray(B, dtype=float)
+        C = np.asarray(C, dtype=float).reshape(1, -1)
+        n = A.shape[0]
+        if A.shape[1] != n:
+            raise ValueError('A must be square (n x n)')
+        m = B.shape[1]
+        if B.shape[0] != n:
+            raise ValueError('B must have n rows')
+        if C.shape[1] != n:
+            raise ValueError('C must have length n')
+
+        # Standardize cost matrices
+        Q = np.asarray(Q, dtype=float)
+        if Q.ndim == 1:
+            Q = np.diag(Q)
+        elif Q.size == 1:
+            Q = np.eye(n) * float(Q)
+        if Q.shape != (n, n):
+            raise ValueError('Q must be n x n, scalar, or n-vector')
+
+        R = np.asarray(R, dtype=float)
+        if R.ndim == 1:
+            R = np.diag(R)
+        elif R.size == 1:
+            R = np.eye(m) * float(R)
+        if R.shape != (m, m):
+            raise ValueError('R must be m x m, scalar, or m-vector')
+
+        # Initial lifted state from current PV state (fallback for n >= 2): [pv_s, pv_v, ...]
+        x0 = np.zeros(n)
+        if n >= 1:
+            x0[0] = self.pv_s
+        if n >= 2:
+            x0[1] = self.pv_v
+
+        casA = casadi.DM(A)
+        casB = casadi.DM(B)
+        casC = casadi.DM(C)
+        casQ = casadi.DM(Q)
+        casR = casadi.DM(R)
+
+        opti = casadi.Opti()
+        x = opti.variable(n, self.h)
+        u = opti.variable(m, self.h - 1)
+        rw = opti.variable(self.h)
+        e_r = opti.variable(self.h)
+
+        # Initial condition
+        opti.subject_to(x[:, 0] == casadi.DM(x0))
+        opti.subject_to(e_r >= 0)
+
+        cost = 0
+        for i in range(1, self.h):
+            # State-transition
+            opti.subject_to(x[:, i] == casA @ x[:, i-1] + casB @ u[:, i-1])
+
+            # Reward and target tracking cost
+            opti.subject_to(rw[i] == (casC @ x[:, i])[0])
+            cost += 1000 * (rw[i] - reward_target)**2
+
+            # Regularization on state and input
+            cost += casadi.mtimes([x[:, i].T, casQ, x[:, i]])
+            cost += casadi.mtimes([u[:, i-1].T, casR, u[:, i-1]])
+
+            # Relaxation margin to allow tracking feasibility
+            cost += 1e6 * e_r[i]**2
+            opti.subject_to(rw[i] >= reward_target - e_r[i])
+            opti.subject_to(rw[i] <= reward_target + e_r[i])
+
+        opti.minimize(cost)
+        opti.solver('fatrop', {"expand": True, "print_time": 0}, {"print_level": 0})
+
+        sol = opti.solve()
+
+        self.reward_tracking_x_opt = sol.value(x)
+        self.reward_tracking_u_opt = sol.value(u)
+        self.reward_tracking_rw_opt = sol.value(rw)
+        self.reward_tracking_err_opt = sol.value(e_r)
+
+        return self.reward_tracking_x_opt, self.reward_tracking_u_opt, self.reward_tracking_rw_opt
+
 if __name__ == "__main__":
     horizon_length = 16
     time_interval = 0.5
@@ -115,6 +260,8 @@ if __name__ == "__main__":
     ego_s = 0.0
     
     pv_spd_profile_gen = preceding_vehicle_spd_profile_generation(horizon_length, time_interval)
+    pv_spd_profile_gen = preceding_vehicle_spd_profile_generation(horizon_length, time_interval)
+    A, B, C = pv_spd_profile_gen.load_matrices_from_file()
     
     # Initialize nn_controller here if needed
     current_dirname = os.path.dirname(__file__)
