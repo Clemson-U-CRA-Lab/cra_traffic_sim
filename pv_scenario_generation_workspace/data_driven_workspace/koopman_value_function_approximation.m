@@ -4,7 +4,7 @@ close all
 dbstop if error
 
 %%  Section 1: Load the reward data
-data = readtable("dc0_reward_trajectory.csv");
+data = readtable("dc1_reward_trajectory.csv");
 ds = data.space_error.';
 dv = data.speed_error.';
 v_ego = data.ego_speed.';
@@ -87,11 +87,11 @@ function z = koopman_lift_edmd(ds, dv, v_ego, c_ds, c_dv, c_v_ego, sigma)
 end
 
 function z = koopman_lift_sindy(ds, dv, v_ego, a_ego)
-    z = [ds; dv; v_ego; a_ego; ...
-         ds.^2; dv.^2; v_ego.^2; a_ego.^2; ...
-         ds.*dv; ds.*v_ego; ds.*a_ego;...
-         dv.*v_ego;  dv.*a_ego; v_ego.*a_ego];
-    % z = [ds; dv; ds.^2; dv.^2];
+%     z = [ds; dv; v_ego; a_ego; ...
+%          ds.^2; dv.^2; v_ego.^2; a_ego.^2; ...
+%          ds.*dv; ds.*v_ego; ds.*a_ego;...
+%          dv.*v_ego;  dv.*a_ego; v_ego.*a_ego];
+    z = [ds; dv; ds.^2; dv.^2];
 end
 
 function a = IDM(ds, v, dv)
