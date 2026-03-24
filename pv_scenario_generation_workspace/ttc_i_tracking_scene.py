@@ -309,17 +309,16 @@ if __name__ == "__main__":
     v_max = 20.0
     v_min = 0.0
     a_max = 4.0
-    a_min = -6.0
+    a_min = -4.0
     
-    front_v = 0.0
+    front_v = 6.0
     front_a = 0.0
-    front_s = 8.0
+    front_s = 20.0
     
-    ego_v = 0.0
-    ego_a = 0.0
+    ego_v = 3.0
+    ego_a = 2.0
     ego_s = 0.0
     
-    pv_spd_profile_gen = preceding_vehicle_spd_profile_generation(horizon_length, time_interval)
     pv_spd_profile_gen = preceding_vehicle_spd_profile_generation(horizon_length, time_interval)
     A, B, C = pv_spd_profile_gen.load_matrices_from_file()
     
@@ -329,7 +328,7 @@ if __name__ == "__main__":
     FCN_control = NN_controller(nn_pt_file=nn_pt_filename, input_num=3)
     
     sim_T = 0.0
-    sim_end_T = 30.0
+    sim_end_T = 5.0
     dT = 0.1
     use_reward_tracking = True
     
@@ -393,32 +392,32 @@ if __name__ == "__main__":
     print("Simulation completed.")
     
     # Plot result in four subplots: ego speed & pv_speed vs time, distance gap vs time, ego acceleration & pv_acceleration vs time, ttc_i vs time
-    time_log = np.arange(0, sim_end_T+dT, dT)
+    time_log = np.arange(0, sim_end_T+dT*2, dT)
     plt.figure(figsize=(12, 10))
     plt.subplot(4, 1, 1)
-    plt.plot(time_log, pv_v_log, label='Preceding Vehicle Speed')
-    plt.plot(time_log, ego_v_log, label='Ego Vehicle Speed')
+    plt.plot(time_log, pv_v_log, label='Preceding Vehicle Speed', marker='o', markersize=2)
+    plt.plot(time_log, ego_v_log, label='Ego Vehicle Speed', marker='s', markersize=2)
     plt.ylabel('Speed (m/s)')
     plt.title('Preceding Vehicle and Ego Vehicle Speed Profiles')
     plt.legend()
     plt.grid()
     plt.subplot(4, 1, 2)
     distance_gap_log = np.array(pv_s_log) - np.array(ego_s_log)
-    plt.plot(time_log, distance_gap_log, label='Distance Gap (PV - Ego)')
+    plt.plot(time_log, distance_gap_log, label='Distance Gap (PV - Ego)', marker='^', markersize=2)
     plt.ylabel('Distance (m)')
     plt.title('Preceding Vehicle and Ego Vehicle Position Profiles')
     plt.legend()
     plt.grid()
     plt.subplot(4, 1, 3)
-    plt.plot(time_log, pv_a_log, label='Preceding Vehicle Acceleration')
-    plt.plot(time_log, ego_a_log, label='Ego Vehicle Acceleration')
+    plt.plot(time_log, pv_a_log, label='Preceding Vehicle Acceleration', marker='o', markersize=2)
+    plt.plot(time_log, ego_a_log, label='Ego Vehicle Acceleration', marker='s', markersize=2)
     plt.ylabel('Acceleration (m/s²)')
     plt.title('Preceding Vehicle and Ego Vehicle Acceleration Profiles')
     plt.legend()
     plt.grid()
 
     plt.subplot(4, 1, 4)
-    plt.plot(time_log, a_gap_log, label='Acceleration Gap (front_a - ego_a)')
+    plt.plot(time_log, a_gap_log, label='Acceleration Gap (front_a - ego_a)', marker='^', markersize=2)
     plt.xlabel('Time (s)')
     plt.ylabel('Acceleration Gap (m/s²)')
     plt.title('Preceding vs Ego Acceleration Gap')
@@ -427,8 +426,8 @@ if __name__ == "__main__":
 
     # Optionally keep TTCi in a separate figure
     plt.figure(figsize=(12, 4))
-    plt.plot(time_log, ttc_i_log, label='TTCi')
-    plt.plot(time_log, ttc_i_ref_log, label='TTCi Reference', linestyle='--')
+    plt.plot(time_log, ttc_i_log, label='TTCi', marker='o', markersize=2)
+    plt.plot(time_log, ttc_i_ref_log, label='TTCi Reference', linestyle='--', marker='s', markersize=2)
     plt.xlabel('Time (s)')
     plt.ylabel('TTCi (s)')
     plt.title('Time-To-Collision Index (TTCi) Profile')
