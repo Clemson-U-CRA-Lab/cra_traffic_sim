@@ -54,21 +54,19 @@ class stanley_vehicle_controller():
 class CMI_traffic_sim:
     def __init__(self, max_num_vehicles, num_vehicles, sil_simulation):
         self.serial_id = 0
-        self.traffic_s = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_l = np.zeros(max_num_vehicles, dtype=float).tolist()
-        
-        self.traffic_x = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_y = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_z = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_yaw = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_pitch = np.zeros(max_num_vehicles, dtype=float).tolist()
-        
-        self.traffic_alon = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_v = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_omega = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.traffic_brake_status = np.zeros(max_num_vehicles, dtype=bool).tolist()
+        self.traffic_s = [0.0]*max_num_vehicles
+        self.traffic_l = [0.0]*max_num_vehicles
+        self.traffic_x = [0.0]*max_num_vehicles
+        self.traffic_y = [0.0]*max_num_vehicles
+        self.traffic_z = [0.0]*max_num_vehicles
+        self.traffic_yaw = [0.0]*max_num_vehicles
+        self.traffic_pitch = [0.0]*max_num_vehicles
+        self.traffic_alon = [0.0]*max_num_vehicles
+        self.traffic_v = [0.0]*max_num_vehicles
+        self.traffic_omega = [0.0]*max_num_vehicles
+        self.traffic_brake_status = [False]*max_num_vehicles
+        self.traffic_Sv_id = [0]*max_num_vehicles
         self.traffic_num_vehicles = num_vehicles
-        self.traffic_Sv_id = np.zeros(max_num_vehicles, dtype=int).tolist()
         self.traffic_info_msg = traffic_info()
         self.vehicle_traj_msg = vehicle_traj_seq()
         self.s_init = 0.0
