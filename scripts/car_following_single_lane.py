@@ -68,6 +68,7 @@ def main_single_lane_following():
     # start_t = time.time()
     prev_t = time.time()
     sim_t = 0.0
+    s_tl = 150.0
 
     while not rospy.is_shutdown():
         try:
@@ -104,6 +105,7 @@ def main_single_lane_following():
             if (sim_t < 0.5 and traffic_manager.sim_start):
                 # Update simulation time
                 sim_t += Dt
+                s_tl = s_ego_frenet + 150.0
                 continue
             else:
                 msg_counter += 1
@@ -116,8 +118,8 @@ def main_single_lane_following():
                         # traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
                         ds = traffic_manager.traffic_s[i+1] - traffic_manager.traffic_s[i]
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet + ds)
-                        ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
-                                                                                                            pitch_min=-2 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-6.0)
+                        # ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
+                        #                                                                                     pitch_min=-2 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-6.0)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
@@ -147,7 +149,22 @@ def main_single_lane_following():
                                                                                    vx=traffic_manager.traffic_v[i],
                                                                                    vy=0.0,
                                                                                    brake_status=virtual_vehicle_brake)
-
+                    # Add traffic light information
+                    traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet + ds)
+                    ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                             ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                             ego_vehicle_ref_poses[4]]
+                    local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
+                    virtual_traffic_sim_info_manager.update_virtual_vehicle_state(vehicle_id=i+1,
+                                                                                   x=local_traffic_vehicle_poses[0],
+                                                                                   y=-local_traffic_vehicle_poses[1], # Transfer to right hand coordinate
+                                                                                   z=local_traffic_vehicle_poses[2],
+                                                                                   yaw=-local_traffic_vehicle_poses[3], # Transfer to right hand coordinate
+                                                                                   pitch=-local_traffic_vehicle_poses[4], # Transfer to right hand coordinate
+                                                                                   acc=traffic_manager.traffic_alon[i],
+                                                                                   vx=traffic_manager.traffic_v[i],
+                                                                                   vy=0.0,
+                                                                                   brake_status=virtual_vehicle_brake)
                 else:
                     for i in range(num_Sv):
                         ds = traffic_manager.traffic_s[i+1] - traffic_manager.traffic_s[i]

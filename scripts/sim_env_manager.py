@@ -102,25 +102,19 @@ class CMI_traffic_sim:
         self.sub_joy = rospy.Subscriber("/joy", Joy, self.joy_callback)
         self.pub_vehicle_traj_sequence = rospy.Publisher(
             '/front_v_traj_seq_v0', vehicle_traj_seq, queue_size=1)
-        self.sub_traffic_info = rospy.Subscriber(
-            '/traffic_info', traffic_info, self.traffic_info_callback)
-    
-    def traffic_info_callback(self, msg):
-        self.traffic_info_msg = msg
-        for i in range(self.traffic_info_msg.num_vehicles):
-            self.traffic_s[i] = self.traffic_info_msg.s[i]
-            self.traffic_l[i] = self.traffic_info_msg.l[i]
-            self.traffic_x[i] = self.traffic_info_msg.x[i]
-            self.traffic_y[i] = self.traffic_info_msg.y[i]
-            self.traffic_z[i] = self.traffic_info_msg.z[i]
-            self.traffic_yaw[i] = self.traffic_info_msg.yaw[i]
-            self.traffic_pitch[i] = self.traffic_info_msg.pitch[i]
-            self.traffic_alon[i] = self.traffic_info_msg.alon[i]
-            self.traffic_v[i] = self.traffic_info_msg.v[i]
-            self.traffic_omega[i] = self.traffic_info_msg.omega[i]
-            self.traffic_brake_status[i] = self.traffic_info_msg.brake_status[i]
-            self.traffic_Sv_id[i] = self.traffic_info_msg.Sv_id[i]
-
+        self.sub_simInfo = rospy.Subscriber('v2x/obu2veh', Float64MultiArray, self.UpdateSimInfo)
+        
+    def UpdateSimInfo(self, msg):
+        # This is coming from road-side via veh2x_node
+        simInfo = msg.data
+        self.ego_s = simInfo[0]
+        self.traffic_s[0] = self.ego_s
+        self.traffic_v[0] = simInfo[2]
+        self.traffic_alon[0] = simInfo[3]
+        self.traffic_s[1] = simInfo[4]
+        self.traffic_v[1] = simInfo[5]
+        self.traffic_alon[1] = simInfo[6]
+        
     def joy_callback(self, msg):
         if msg.buttons[4]:
             self.sim_start = False
