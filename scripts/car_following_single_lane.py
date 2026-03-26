@@ -68,8 +68,6 @@ def main_single_lane_following():
     # start_t = time.time()
     prev_t = time.time()
     sim_t = 0.0
-    ego_s_init = 0.0
-    init_gap = 8.0
 
     while not rospy.is_shutdown():
         try:
@@ -92,11 +90,7 @@ def main_single_lane_following():
             
             s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
             ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
-            # Initialize future states sequence
-            front_s_t = [0.0] * 40
-            front_v_t = [0.0] * 40
-            front_a_t = [0.0] * 40
-
+            
             run_dir_msg = Int8()
             run_dir_msg.data = run_direction
             dir_msg_publisher.publish(run_dir_msg)
@@ -110,50 +104,17 @@ def main_single_lane_following():
             if (sim_t < 0.5 and traffic_manager.sim_start):
                 # Update simulation time
                 sim_t += Dt
-                # Find initial distance as start distance on the map
-                traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=init_gap, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
-                ego_s_init = s_ego_frenet
                 continue
             else:
                 msg_counter += 1
                 if traffic_manager.sim_start:
                     # Update simulation time
                     sim_t += Dt
-                    spd_t, dist_t, acc_t = traffic_map_manager.find_speed_profile_information(sim_t=sim_t) # Get target speed and distance at current time
                     
-                    # Update the virtual traffic vehicle states
-                    front_s_t[0] = round(traffic_manager.traffic_s[0])
-                    front_v_t[0] = round(traffic_manager.traffic_v[0])
-                    front_a_t[0] = traffic_manager.traffic_alon[0]
-
-                    # Find the states for next few time steps
-                    for i in range(1, 20):
-                        if not use_preview:
-                            if front_v_t[i - 1] >= 20:
-                                front_a_t[i] = 0
-                                front_v_t[i] = 20
-                            
-                            if front_v_t[i - 1] <= 0:
-                                front_a_t[i] = 0
-                                front_v_t[i] = 0
-                            
-                            front_s_t[i] = round(front_s_t[i - 1] + front_v_t[i - 1] * pv_dt + 0.5 * front_a_t[i - 1] * pv_dt ** 2, 2)
-                            front_v_t[i] = round(np.clip(front_v_t[i - 1] + front_a_t[i - 1] * pv_dt, 0, 20), 2)
-                            front_a_t[i] = front_a_t[i - 1]
-                        else:
-                            sim_dt = i * pv_dt
-                            v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(dt=sim_dt, sim_t=sim_t)
-                            front_s_t[i] = round(s_t + ego_s_init + init_gap, 3)
-                            front_v_t[i] = round(v_t, 3)
-                            front_a_t[i] = round(a_t, 3)
-
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
                         # traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                        traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + ego_s_init + init_gap, 
-                                                                        v_t=spd_t, 
-                                                                        a_t=acc_t, 
-                                                                        vehicle_id=i)
+                        # To-do: Update from received traffic information
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                         ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
                                                                                                             pitch_min=-2 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-6.0)
@@ -214,18 +175,9 @@ def main_single_lane_following():
             # Publish the traffic information
             # Construct the ROS message
             virtual_traffic_sim_info_manager.construct_hololens_info_msg()
-            traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
-            traffic_manager.construct_vehicle_state_sequence_msg(id=msg_counter, 
-                                                                 t=sim_t, 
-                                                                 s=front_s_t, 
-                                                                 v=front_v_t, 
-                                                                 a=front_a_t, 
-                                                                 sim_start=traffic_manager.sim_start)
 
             # Publish the ROS message
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()
-            traffic_manager.publish_traffic_sim_info()
-            traffic_manager.publish_vehicle_traj()
 
             # Publish road reference correction message
             road_ref_correction_msg = road_reference_correction_msg_prep(ego_vehicle_pitch_from_acceleration)

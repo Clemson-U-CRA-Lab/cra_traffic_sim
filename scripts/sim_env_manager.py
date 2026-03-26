@@ -98,12 +98,28 @@ class CMI_traffic_sim:
         else:
             self.sub_lowlevel_bridge = rospy.Subscriber('/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
             print('Use lowlevel as state tracker')
-            
-        self.pub_traffic_info = rospy.Publisher(
-            '/traffic_sim_info_mache', traffic_info, queue_size=1)
+
         self.sub_joy = rospy.Subscriber("/joy", Joy, self.joy_callback)
         self.pub_vehicle_traj_sequence = rospy.Publisher(
             '/front_v_traj_seq_v0', vehicle_traj_seq, queue_size=1)
+        self.sub_traffic_info = rospy.Subscriber(
+            '/traffic_info', traffic_info, self.traffic_info_callback)
+    
+    def traffic_info_callback(self, msg):
+        self.traffic_info_msg = msg
+        for i in range(self.traffic_info_msg.num_vehicles):
+            self.traffic_s[i] = self.traffic_info_msg.s[i]
+            self.traffic_l[i] = self.traffic_info_msg.l[i]
+            self.traffic_x[i] = self.traffic_info_msg.x[i]
+            self.traffic_y[i] = self.traffic_info_msg.y[i]
+            self.traffic_z[i] = self.traffic_info_msg.z[i]
+            self.traffic_yaw[i] = self.traffic_info_msg.yaw[i]
+            self.traffic_pitch[i] = self.traffic_info_msg.pitch[i]
+            self.traffic_alon[i] = self.traffic_info_msg.alon[i]
+            self.traffic_v[i] = self.traffic_info_msg.v[i]
+            self.traffic_omega[i] = self.traffic_info_msg.omega[i]
+            self.traffic_brake_status[i] = self.traffic_info_msg.brake_status[i]
+            self.traffic_Sv_id[i] = self.traffic_info_msg.Sv_id[i]
 
     def joy_callback(self, msg):
         if msg.buttons[4]:
@@ -222,29 +238,6 @@ class CMI_traffic_sim:
             self.vehicle_traj_seq_msg.front_a[i] = a[i]
             self.vehicle_traj_seq_msg.front_v[i] = v[i]
             self.vehicle_traj_seq_msg.front_s[i] = s[i]
-
-    def construct_traffic_sim_info_msg(self, sim_t):
-        self.traffic_info_msg = traffic_info()
-        self.traffic_info_msg.serial = self.serial_id
-        self.traffic_info_msg.num_SVs_x = self.traffic_num_vehicles
-        self.traffic_info_msg.sim_T = sim_t
-        self.traffic_info_msg.virtual_vehicle_id = self.traffic_Sv_id
-        self.traffic_info_msg.S_v_s = self.traffic_s
-        self.traffic_info_msg.S_v_l = self.traffic_l
-        self.traffic_info_msg.S_v_sv = self.traffic_v
-        self.traffic_info_msg.S_v_acc = self.traffic_alon
-        self.traffic_info_msg.S_v_yaw = self.traffic_yaw
-        self.traffic_info_msg.S_v_omega = self.traffic_omega
-        self.traffic_info_msg.S_v_brake_status = self.traffic_brake_status
-        self.traffic_info_msg.E_v_s = self.ego_s
-        self.traffic_info_msg.E_v_l = self.ego_l
-        self.traffic_info_msg.E_v_sv = self.ego_sv
-        self.traffic_info_msg.E_v_lv = self.ego_lv
-        self.traffic_info_msg.E_v_yaw = self.ego_yaw_s
-        self.traffic_info_msg.E_v_acc = self.ego_acc
-
-    def publish_traffic_sim_info(self):
-        self.pub_traffic_info.publish(self.traffic_info_msg)
         
     def publish_vehicle_traj(self):
         self.pub_vehicle_traj_sequence.publish(self.vehicle_traj_seq_msg)
