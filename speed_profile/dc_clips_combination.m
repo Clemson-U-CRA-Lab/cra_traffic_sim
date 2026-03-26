@@ -27,7 +27,7 @@ for i = 1:1:6
     v = [v; data.velocity; zeros(wait_t*10, 1)];
 end
 sim_t = (0:dt:dt*(length(a)-1)).';
-dist = [0; cumsum(v(1:end-1) + v(2:end) * dt / 2)];
+dist = [0; cumsum((v(1:end-1) + v(2:end)) * dt / 2)];
 
 %%  Sanity check the driving cycle
 figure(1)

@@ -157,8 +157,8 @@ def main_single_lane_following():
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
                         ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
                                                                                                             pitch_min=-2 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-6.0)
-                        ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
-                                             ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                        ego_vehicle_poses = [ego_vehicle_ref_poses[0], ego_vehicle_ref_poses[1],
+                                             ego_vehicle_ref_poses[2], ego_vehicle_ref_poses[3],
                                              ego_vehicle_ref_poses[4]]
 
                         # Find ego vehicle pose on frenet coordinate
@@ -170,7 +170,6 @@ def main_single_lane_following():
                         traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
                         
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
-                        
                         # Update virtual traffic braking status
                         traffic_manager.traffic_brake_status_update(vehicle_id=i)
                         virtual_vehicle_brake = traffic_manager.traffic_brake_status[i]
@@ -190,8 +189,8 @@ def main_single_lane_following():
                 else:
                     for i in range(num_Sv):
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet)
-                        ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
-                                             ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                        ego_vehicle_poses = [ego_vehicle_ref_poses[0], ego_vehicle_ref_poses[1],
+                                             ego_vehicle_ref_poses[2], ego_vehicle_ref_poses[3],
                                              ego_vehicle_ref_poses[4]]
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                         # Update virtual traffic braking status

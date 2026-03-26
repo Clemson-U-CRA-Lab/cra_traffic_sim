@@ -9,7 +9,7 @@ textsize = 20;
 loop_map = false;
 mapping = true;
 save_mapping = true;
-map_file_name = 'test_dir0.csv';
+map_file_name = 'cuicar_trail.csv';
 %%  Load the data
 % Load rosbag file
 [bag_filename, bag_location] = uigetfile('.bag', 'Please select rosbag files');
@@ -69,14 +69,13 @@ if mapping
     yaw_map = [ego_yaw(1)];
     pitch_map = [ego_pitch(1)];
     
-
     for i = 2:1:length(ego_x)
         ds = ((ego_x(i) - x_map(end))^2 + (ego_y(i) - y_map(end))^2)^0.5;
         if (ds > 0.2)
+            yaw_map = [yaw_map, atan2(ego_y(i) - y_map(end), ego_x(i) - x_map(end))];
             x_map = [x_map, ego_x(i)];
             y_map = [y_map, ego_y(i)];
             z_map = [z_map, ego_z(i)];
-            yaw_map = [yaw_map, ego_yaw(i)];
             pitch_map = [pitch_map, ego_pitch(i)];
             s_map = [s_map, s_map(end) + ds];
         else
@@ -84,7 +83,8 @@ if mapping
         end
     end
 
-    pitch_map = smoothdata(pitch_map, 'gaussian', 10);
+    pitch_map = smoothdata(pitch_map, 'gaussian', 30);
+    yaw_map = smoothdata(yaw_map, 'gaussian', 30);
 
     figure(1)
     scatter3(x_map, y_map, z_map, 'filled');
