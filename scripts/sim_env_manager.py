@@ -54,6 +54,7 @@ class stanley_vehicle_controller():
 class CMI_traffic_sim:
     def __init__(self, max_num_vehicles, num_vehicles, sil_simulation):
         self.serial_id = 0
+        self.max_num_vehicles = max_num_vehicles
         self.traffic_s = [0.0]*max_num_vehicles
         self.traffic_l = [0.0]*max_num_vehicles
         self.traffic_x = [0.0]*max_num_vehicles
@@ -91,6 +92,15 @@ class CMI_traffic_sim:
 
         self.traffic_initialized = False
         self.sim_start = False
+        self.last_siminfo_time = None
+
+        default_tracked_vehicle_ids = [0, 1]
+        self.kalman_tracked_vehicle_ids = rospy.get_param("~kalman_tracked_vehicle_ids", default_tracked_vehicle_ids)
+        self.kalman_process_noise = np.diag(rospy.get_param("~kalman_process_noise_diag", [0.5, 1.0, 2.0]))
+        self.kalman_measurement_noise = np.diag(rospy.get_param("~kalman_measurement_noise_diag", [4.0, 2.0, 3.0]))
+        self.kalman_initial_covariance = np.diag(rospy.get_param("~kalman_initial_covariance_diag", [1.0, 1.0, 1.0]))
+        self.kalman_max_dt = float(rospy.get_param("~kalman_max_dt", 0.2))
+        self.traffic_kalman_filters = [self._create_kalman_filter_state() for _ in range(max_num_vehicles)]
         
         if sil_simulation:
             self.sub_lowlevel_bridge = rospy.Subscriber('/odom', Odometry, self.odom_callback)
@@ -103,17 +113,98 @@ class CMI_traffic_sim:
         self.pub_vehicle_traj_sequence = rospy.Publisher(
             '/front_v_traj_seq_v0', vehicle_traj_seq, queue_size=1)
         self.sub_simInfo = rospy.Subscriber('v2x/obu2veh', Float64MultiArray, self.UpdateSimInfo)
+
+    def _create_kalman_filter_state(self):
+        return {
+            'initialized': False,
+            'x': np.zeros((3, 1)),
+            'P': self.kalman_initial_covariance.copy()
+        }
+
+    def reset_traffic_kalman_filter(self, vehicle_id, s_meas, v_meas, a_meas):
+        kalman_filter = self.traffic_kalman_filters[vehicle_id]
+        kalman_filter['initialized'] = True
+        kalman_filter['x'] = np.array([[s_meas], [v_meas], [a_meas]], dtype=float)
+        kalman_filter['P'] = self.kalman_initial_covariance.copy()
+        self._write_kalman_state_to_traffic_arrays(vehicle_id)
+
+    def _write_kalman_state_to_traffic_arrays(self, vehicle_id):
+        kalman_filter = self.traffic_kalman_filters[vehicle_id]
+        self.traffic_s[vehicle_id] = kalman_filter['x'][0, 0]
+        self.traffic_v[vehicle_id] = max(kalman_filter['x'][1, 0], 0.0)
+        self.traffic_alon[vehicle_id] = kalman_filter['x'][2, 0]
+
+    def predict_traffic_kalman_filter(self, vehicle_id, dt):
+        kalman_filter = self.traffic_kalman_filters[vehicle_id]
+
+        if (not kalman_filter['initialized']) or dt <= 0.0:
+            return
+
+        dt = min(dt, self.kalman_max_dt)
+        dt2 = dt ** 2
+
+        A = np.array([
+            [1.0, dt, 0.5 * dt2],
+            [0.0, 1.0, dt],
+            [0.0, 0.0, 1.0]
+        ])
+        Q = self.kalman_process_noise * max(dt, 1e-3)
+
+        kalman_filter['x'] = A @ kalman_filter['x']
+        kalman_filter['P'] = A @ kalman_filter['P'] @ A.T + Q
+
+        if kalman_filter['x'][1, 0] < 0.0:
+            kalman_filter['x'][1, 0] = 0.0
+
+        self._write_kalman_state_to_traffic_arrays(vehicle_id)
+
+    def correct_traffic_kalman_filter(self, vehicle_id, s_meas, v_meas, a_meas):
+        kalman_filter = self.traffic_kalman_filters[vehicle_id]
+
+        if not kalman_filter['initialized']:
+            self.reset_traffic_kalman_filter(vehicle_id, s_meas, v_meas, a_meas)
+            return
+
+        H = np.eye(3)
+        R = self.kalman_measurement_noise
+
+        z = np.array([[s_meas], [v_meas], [a_meas]], dtype=float)
+        innovation = z - H @ kalman_filter['x']
+        S = H @ kalman_filter['P'] @ H.T + R
+        K = kalman_filter['P'] @ H.T @ np.linalg.inv(S)
+
+        kalman_filter['x'] = kalman_filter['x'] + K @ innovation
+        kalman_filter['P'] = (np.eye(3) - K @ H) @ kalman_filter['P']
+
+        if kalman_filter['x'][1, 0] < 0.0:
+            kalman_filter['x'][1, 0] = 0.0
+
+        self._write_kalman_state_to_traffic_arrays(vehicle_id)
+
+    def predict_tracked_traffic_states(self, dt):
+        for vehicle_id in self.kalman_tracked_vehicle_ids:
+            if vehicle_id < self.max_num_vehicles:
+                self.predict_traffic_kalman_filter(vehicle_id, dt)
         
     def UpdateSimInfo(self, msg):
         # This is coming from road-side via veh2x_node
         simInfo = msg.data
-        self.ego_s = simInfo[1]
-        self.traffic_s[0] = self.ego_s
-        self.traffic_v[0] = simInfo[2]
-        self.traffic_alon[0] = simInfo[3]
-        self.traffic_s[1] = simInfo[4]
-        self.traffic_v[1] = simInfo[5]
-        self.traffic_alon[1] = simInfo[6]
+        if len(simInfo) < 7:
+            rospy.logwarn_throttle(1.0, "Received short v2x/obu2veh message. Expected at least 7 values.")
+            return
+
+        self.last_siminfo_time = time.time()
+
+        self.correct_traffic_kalman_filter(vehicle_id=0,
+                                           s_meas=simInfo[1],
+                                           v_meas=simInfo[2],
+                                           a_meas=simInfo[3])
+        self.correct_traffic_kalman_filter(vehicle_id=1,
+                                           s_meas=simInfo[4],
+                                           v_meas=simInfo[5],
+                                           a_meas=simInfo[6])
+
+        self.ego_s = self.traffic_s[0]
         
     def joy_callback(self, msg):
         if msg.buttons[4]:

@@ -15,6 +15,7 @@ from utils import *
 
 # Define constants
 RAD_TO_DEGREE = 52.296
+DEFAULT_SINGLE_LANE_SPACING = 30.0
 
 def road_reference_correction_msg_prep(ego_pitch):
     road_ref_correction_msg = ref_traj_correction()
@@ -24,6 +25,18 @@ def road_reference_correction_msg_prep(ego_pitch):
     road_ref_correction_msg.road_ref_pitch = ego_pitch
     road_ref_correction_msg.road_ref_yaw = 0.0
     return road_ref_correction_msg
+
+def get_single_lane_vehicle_spacing(traffic_manager, vehicle_id, default_spacing):
+    lead_vehicle_id = vehicle_id + 1
+    if lead_vehicle_id >= len(traffic_manager.traffic_s):
+        return default_spacing
+
+    lead_s = traffic_manager.traffic_s[lead_vehicle_id]
+    ego_s = traffic_manager.traffic_s[vehicle_id]
+    if (lead_s == 0.0 and ego_s == 0.0):
+        return default_spacing
+
+    return max(lead_s - ego_s, 0.0)
 
 def main_single_lane_following():
     # Path Parameters
@@ -44,6 +57,8 @@ def main_single_lane_following():
     pv_dt = float(rospy.get_param("/pv_states_dt"))
     use_preview = bool(rospy.get_param("/use_preview"))
     run_direction = rospy.get_param("/runDirection")
+    predict_traffic_each_frame = bool(rospy.get_param("~predict_traffic_each_frame", True))
+    default_spacing = float(rospy.get_param("~default_single_lane_spacing", DEFAULT_SINGLE_LANE_SPACING))
 
     map_1_file = os.path.join(parent_dir, "maps", map_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
@@ -54,7 +69,7 @@ def main_single_lane_following():
 
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
     virtual_traffic_sim_info_manager = hololens_message_manager(
-        num_vehicles=1, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
+        num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
     traffic_map_manager = road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     traffic_map_manager.read_map_data()
@@ -76,6 +91,9 @@ def main_single_lane_following():
             Dt = time.time() - prev_t
             # Refresh previous frame time
             prev_t = time.time()
+
+            if predict_traffic_each_frame:
+                traffic_manager.predict_tracked_traffic_states(Dt)
             
             # Add traffic information to simulation managment class
             traffic_manager.serial_id = msg_counter
@@ -115,8 +133,7 @@ def main_single_lane_following():
                     
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
-                        # traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                        ds = traffic_manager.traffic_s[i+1] - traffic_manager.traffic_s[i]
+                        ds = get_single_lane_vehicle_spacing(traffic_manager, i, default_spacing)
                         
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet + ds)
                         # ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
@@ -168,7 +185,7 @@ def main_single_lane_following():
                                                                                    brake_status=virtual_vehicle_brake)
                 else:
                     for i in range(num_Sv):
-                        ds = traffic_manager.traffic_s[i+1] - traffic_manager.traffic_s[i]
+                        ds = get_single_lane_vehicle_spacing(traffic_manager, i, default_spacing)
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet + ds)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,

@@ -75,6 +75,8 @@ def main_single_lane_following():
             Dt = time.time() - prev_t
             # Refresh previous frame time
             prev_t = time.time()
+
+            traffic_manager.predict_tracked_traffic_states(Dt)
             
             # Add traffic information to simulation managment class
             traffic_manager.serial_id = msg_counter
