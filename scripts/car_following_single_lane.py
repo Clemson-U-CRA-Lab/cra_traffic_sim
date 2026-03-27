@@ -151,10 +151,10 @@ def main_single_lane_following():
                                                                                    vy=0.0,
                                                                                    brake_status=virtual_vehicle_brake)
                     # Add traffic light information
-                    traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet + ds)
+                    traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(s_tl)
                     ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
-                                             ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
-                                             ego_vehicle_ref_poses[4]]
+                                         ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                         ego_vehicle_ref_poses[4]]
                     local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
                     virtual_traffic_sim_info_manager.update_virtual_vehicle_state(vehicle_id=i+1,
                                                                                    x=local_traffic_vehicle_poses[0],
