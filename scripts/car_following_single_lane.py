@@ -91,7 +91,7 @@ def main_single_lane_following():
                                                               ego_omega=traffic_manager.ego_omega)
             
             s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
-            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
+            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet, lane_id=0)
             # Initialize future states sequence
             front_s_t = [0.0] * 40
             front_v_t = [0.0] * 40
@@ -154,7 +154,7 @@ def main_single_lane_following():
                                                                         v_t=spd_t, 
                                                                         a_t=acc_t, 
                                                                         vehicle_id=i)
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i], lane_id=0)
                         ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
                                                                                                             pitch_min=-2 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-6.0)
                         ego_vehicle_poses = [ego_vehicle_ref_poses[0], ego_vehicle_ref_poses[1],
@@ -188,7 +188,7 @@ def main_single_lane_following():
 
                 else:
                     for i in range(num_Sv):
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet)
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet, lane_id=0)
                         ego_vehicle_poses = [ego_vehicle_ref_poses[0], ego_vehicle_ref_poses[1],
                                              ego_vehicle_ref_poses[2], ego_vehicle_ref_poses[3],
                                              ego_vehicle_ref_poses[4]]

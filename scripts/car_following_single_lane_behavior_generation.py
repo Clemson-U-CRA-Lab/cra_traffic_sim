@@ -57,8 +57,18 @@ def main_single_lane_following():
         num_vehicles=1, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
     traffic_map_manager = road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
-    front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(horizon_length=16, time_interval=pv_dt)
-    
+    front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(horizon_length=8, time_interval=pv_dt)
+
+    # Default mode for reward tracking, but disable if matrices fail to load
+    use_reward_tracking = True
+
+    # Load A, B, C matrices required by perform_nonlinear_optimization_for_reward_tracking
+    matrix_data_folder = os.path.join(parent_dir, "pv_scenario_generation_workspace", "data_driven_workspace")
+    A, B, C = front_vehicle_motion_generator.load_matrices_from_file(data_folder_path=matrix_data_folder)
+    if A is None or B is None or C is None:
+        rospy.logerr(f"Failed to load model matrices from {matrix_data_folder}. Reward tracking will be disabled.")
+        use_reward_tracking = False
+
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
     
@@ -73,6 +83,11 @@ def main_single_lane_following():
     sim_t = 0.0
     ego_s_init = 0.0
     init_gap = 8.0
+    # Front vehicle control mode (see ttc_i_tracking_scene) is set above when loading matrices
+    reward_Q = 1.0
+    reward_R = 10.0
+    reward_R_du = 100.0
+    reward_target = 20.0
 
     while not rospy.is_shutdown():
         try:
@@ -94,13 +109,13 @@ def main_single_lane_following():
                                                               ego_omega=traffic_manager.ego_omega)
             
             s_ego_frenet, _ , _= traffic_map_manager.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
-            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet)
+            ego_vehicle_ref_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet, lane_id=0)
             
             # Initialize future states sequence
             front_s_t = [0.0] * 40
             front_v_t = [0.0] * 40
             front_a_t = [0.0] * 40
-
+            
             run_dir_msg = Int8()
             run_dir_msg.data = run_direction
             dir_msg_publisher.publish(run_dir_msg)
@@ -131,28 +146,69 @@ def main_single_lane_following():
                                                                             pv_a_t=traffic_manager.traffic_alon[0],
                                                                             pv_v_t=traffic_manager.traffic_v[0],
                                                                             pv_s_t=traffic_manager.traffic_s[0])
-                    if traffic_manager.ego_v < traffic_manager.traffic_v[0]:
-                        ttc_i_ref = 0.15
-                    else:
-                        ttc_i_ref = -0.15
-                        
-                    front_vehicle_motion_generator.perform_nonlinear_optimization_for_pv_spd(ttc_i_ref=ttc_i_ref,
-                                                                                             v_max = 15.0,
-                                                                                             v_min=0.0,
-                                                                                             a_max=3.0,
-                                                                                             a_min=-5.0)
                     
-                    traffic_manager.traffic_alon[0] = front_vehicle_motion_generator.pv_a_opt[0]
-                    traffic_manager.traffic_v[0] += traffic_manager.traffic_v[0] * Dt + 0.5 * traffic_manager.traffic_alon[0] * Dt**2
-                    traffic_manager.traffic_s[0] += traffic_manager.traffic_s[0] + traffic_manager.traffic_v[0] * Dt + 0.5 * traffic_manager.traffic_alon[0] * Dt**2 
+                    # TTCi reference from ttc_i_tracking_scene
+                    gap = traffic_manager.traffic_s[0] - traffic_manager.ego_s
+                    ttc_i_ref = 0.1534 / (1.0 + math.exp(0.195 * (gap - 18.36)))
+                    
+                    if use_reward_tracking:
+                        front_vehicle_motion_generator.perform_nonlinear_optimization_for_reward_tracking(
+                            Q=reward_Q,
+                            R=reward_R,
+                            reward_target=reward_target,
+                            a_max=3.0,
+                            a_min=-3.0,
+                            v_max=15.0,
+                            v_min=0.0,
+                            R_du=reward_R_du)
+                        
+                        # following the ttc_i_tracking_scene update rule
+                        front_a_target = traffic_manager.ego_acc + float(front_vehicle_motion_generator.reward_tracking_u_opt[0])
+                        front_a = np.clip(traffic_manager.traffic_alon[0], -3.0, 3.0)
+                        traffic_manager.traffic_alon[0] = front_a + 0.05 * (front_a_target - front_a)
+                        
+                    else:
+                        print('TTCi reference is: ', ttc_i_ref)
+                        front_vehicle_motion_generator.perform_nonlinear_optimization_for_pv_spd(
+                            ttc_i_ref=ttc_i_ref,
+                            v_max=15.0,
+                            v_min=0.0,
+                            a_max=3.0,
+                            a_min=-5.0)
+                        
+                        traffic_manager.traffic_alon[0] = float(front_vehicle_motion_generator.pv_a_opt[0])
+                        
+                    # integrate front vehicle motion using kinematics
+                    traffic_manager.traffic_v[0] = traffic_manager.traffic_v[0] + traffic_manager.traffic_alon[0] * Dt
+                    traffic_manager.traffic_s[0] = traffic_manager.traffic_s[0] + traffic_manager.traffic_v[0] * Dt + 0.5 * traffic_manager.traffic_alon[0] * Dt**2
+
+                    # Update front vehicle predicted sequences (match car_following_single_lane.py style)
+                    front_s_t[0] = round(traffic_manager.traffic_s[0], 3)
+                    front_v_t[0] = round(traffic_manager.traffic_v[0], 3)
+                    front_a_t[0] = round(traffic_manager.traffic_alon[0], 3)
+
+                    for i in range(1, 20):
+                        if not use_preview:
+                            if front_v_t[i - 1] >= 20:
+                                front_a_t[i] = 0.0
+                                front_v_t[i] = 20.0
+                            elif front_v_t[i - 1] <= 0:
+                                front_a_t[i] = 0.0
+                                front_v_t[i] = 0.0
+                            else:
+                                front_v_t[i] = round(np.clip(front_v_t[i - 1] + front_a_t[i - 1] * pv_dt, 0, 20), 3)
+                                front_s_t[i] = round(front_s_t[i - 1] + front_v_t[i - 1] * pv_dt + 0.5 * front_a_t[i - 1] * pv_dt ** 2, 3)
+                                front_a_t[i] = front_a_t[i - 1]
+                        else:
+                            sim_dt = i * pv_dt
+                            v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(dt=sim_dt, sim_t=sim_t)
+                            front_s_t[i] = round(s_t + ego_s_init + init_gap, 3)
+                            front_v_t[i] = round(v_t, 3)
+                            front_a_t[i] = round(a_t, 3)
+
                     # Find virtual traffic global poses
                     for i in range(num_Sv):
-                        # traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
-                        # traffic_manager.traffic_update_from_spd_profile(s_t=dist_t + ego_s_init + init_gap, 
-                        #                                                 v_t=spd_t, 
-                        #                                                 a_t=acc_t, 
-                        #                                                 vehicle_id=i)
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i])
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i], lane_id=0)
                         ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
                                                                                                             pitch_min=-2 / RAD_TO_DEGREE, 
                                                                                                             acc_max=4.0, 
@@ -160,13 +216,13 @@ def main_single_lane_following():
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]
-
+                        
                         # Find ego vehicle pose on frenet coordinate
                         _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(ego_poses=traffic_manager.ego_pose_ref,
                                                                                                        ego_yaw=ego_vehicle_poses[3],
                                                                                                        vy=traffic_manager.ego_v_north,
                                                                                                        vx=traffic_manager.ego_v_east)
-
+                        
                         traffic_manager.ego_vehicle_frenet_update(s=s_ego_frenet, l=0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
                         
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
@@ -189,7 +245,7 @@ def main_single_lane_following():
 
                 else:
                     for i in range(num_Sv):
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet)
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i] - s_ego_frenet, lane_id=0)
                         ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                              ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                              ego_vehicle_ref_poses[4]]

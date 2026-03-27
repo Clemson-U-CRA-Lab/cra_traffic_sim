@@ -525,6 +525,214 @@ class preceding_vehicle_spd_profile_generation():
         
         self.ttc_i = 0.0
         
+        # Initialize A, B, C matrices (will be loaded via load_matrices_from_file)
+        self.A = None
+        self.B = None
+        self.C = None
+        
+        # Initialize for storing optimal u
+        self.reward_tracking_u_opt = None
+        self.reward_tracking_x_opt = None
+        self.reward_tracking_rw_opt = None
+        self.reward_tracking_err_opt = None
+        
+    def load_matrices_from_file(self, data_folder_path=None):
+        """Load A, B, C matrices from CSV files in the data_driven_workspace folder.
+        
+        Args:
+            data_folder_path (str): Path to the data_driven_workspace folder. 
+                                   If None, uses the default relative path.
+        
+        Returns:
+            tuple: (A, B, C) - numpy arrays containing the loaded matrices
+        """
+        if data_folder_path is None:
+            # Get the directory of the current script
+            current_dirname = os.path.dirname(os.path.abspath(__file__))
+            data_folder_path = os.path.join(current_dirname, '..', 'pv_scenario_generation_workspace', 'data_driven_workspace')
+            
+        # Load matrices from CSV files
+        try:
+            A_file = os.path.join(data_folder_path, 'A_4x4_matrix.csv')
+            B_file = os.path.join(data_folder_path, 'B_4x1_matrix.csv')
+            C_file = os.path.join(data_folder_path, 'C_1x4_matrix.csv')
+            
+            self.A = np.loadtxt(A_file, delimiter=',')
+            self.B = np.loadtxt(B_file, delimiter=',')
+            self.C = np.loadtxt(C_file, delimiter=',')
+            
+            # Ensure proper shape for B (should be column vector)
+            if self.B.ndim == 1:
+                self.B = self.B.reshape(-1, 1)
+            
+            # Ensure proper shape for C (should be row vector)
+            if self.C.ndim == 1:
+                self.C = self.C.reshape(1, -1)
+            
+            print(f"Matrices loaded successfully from {data_folder_path}")
+            print(f"A shape: {self.A.shape}, B shape: {self.B.shape}, C shape: {self.C.shape}")
+            
+            return self.A, self.B, self.C
+        
+        except FileNotFoundError as e:
+            print(f"Error: Could not find matrix files in {data_folder_path}")
+            print(f"Details: {e}")
+            return None, None, None
+        except Exception as e:
+            print(f"Error loading matrices: {e}")
+            return None, None, None
+
+        
+    def _koopman_lift_sindy(self, ds, dv, v_ego, a_ego):
+        """Lift original state to Koopman space using the updated SINDy basis from MATLAB counterpart."""
+        return np.array([ds, dv, ds**2, dv**2], dtype=float)
+
+    def perform_nonlinear_optimization_for_reward_tracking(self, Q, R, reward_target, a_max=None, a_min=None, v_max=None, v_min=None, du_max=None, du_min=None, R_du=0.0):
+        """Optimize PV motion to track a target reward using lifted state-space model.
+
+        Q: n x n state cost weight matrix (or scalar/diagonal vector)
+        R: m x m control cost weight matrix (or scalar/diagonal vector)
+        reward_target: scalar target reward value
+        a_max: maximum acceleration (optional)
+        a_min: minimum acceleration (optional)
+        v_max: maximum velocity (optional)
+        v_min: minimum velocity (optional)
+        du_max: maximum change in control input between steps (optional)
+        du_min: minimum change in control input between steps (optional)
+        R_du: cost weight for rate of change in control input (default 0.0)
+        """
+        # Input checks
+        if not isinstance(reward_target, (int, float)):
+            raise ValueError("reward_target must be a scalar number.")
+        if du_max is not None and not isinstance(du_max, (int, float)):
+            raise ValueError("du_max must be numeric.")
+        if du_min is not None and not isinstance(du_min, (int, float)):
+            raise ValueError("du_min must be numeric.")
+        if not isinstance(R_du, (int, float)) or R_du < 0:
+            raise ValueError("R_du must be a non-negative scalar number.")
+
+        if self.A is None or self.B is None or self.C is None:
+            raise ValueError("Matrices A, B, C must be loaded before calling this method.")
+        
+        # Use stored matrices
+        n = self.A.shape[0]
+        if self.A.shape[1] != n:
+            raise ValueError('A must be square (n x n)')
+        m = self.B.shape[1]
+        if self.B.shape[0] != n:
+            raise ValueError('B must have n rows')
+        if self.C.shape[1] != n:
+            raise ValueError('C must have length n')
+
+        # Standardize cost matrices
+        Q = np.asarray(Q, dtype=float)
+        if Q.ndim == 1:
+            Q = np.diag(Q)
+        elif Q.size == 1:
+            Q = np.eye(n) * float(Q)
+        if Q.shape != (n, n):
+            raise ValueError('Q must be n x n, scalar, or n-vector')
+
+        R = np.asarray(R, dtype=float)
+        if R.ndim == 1:
+            R = np.diag(R)
+        elif R.size == 1:
+            R = np.eye(m) * float(R)
+        if R.shape != (m, m):
+            raise ValueError('R must be m x m, scalar, or m-vector')
+
+        # Initial lifted state from current states using Koopman SINDY lifting
+        ds = self.pv_s - self.ego_s[0]
+        dv = self.pv_v - self.ego_v[0]
+        v_ego = self.ego_v[0]
+        a_ego = self.ego_a[0]
+
+        lift_z = self._koopman_lift_sindy(ds, dv, v_ego, a_ego)
+        x0 = np.zeros(n)
+        x0[: min(n, lift_z.size)] = lift_z[: min(n, lift_z.size)]
+
+        # if n > lifted dimension, fill extra entries with current PV quantities
+        if n > lift_z.size:
+            extras = np.array([self.pv_s, self.pv_v, self.pv_a])
+            x0[lift_z.size: min(n, lift_z.size + extras.size)] = extras[: min(n - lift_z.size, extras.size)]
+
+        casA = casadi.DM(self.A)
+        casB = casadi.DM(self.B)
+        casC = casadi.DM(self.C)
+        casQ = casadi.DM(Q)
+        casR = casadi.DM(R)
+
+        opti = casadi.Opti()
+        x = opti.variable(n, self.h)
+        u = opti.variable(m, self.h - 1)
+        rw = opti.variable(self.h)
+        e_r = opti.variable(self.h)
+
+        # Initial condition
+        opti.subject_to(x[:, 0] == casadi.DM(x0))
+        opti.subject_to(e_r >= 0)
+
+        cost = 0
+        for i in range(1, self.h):
+            # State-transition
+            opti.subject_to(x[:, i] == casA @ x[:, i-1] + casB @ u[:, i-1])
+
+            # Add constraints on control input (assuming u[0] is acceleration)
+            if a_max is not None:
+                opti.subject_to(u[0, i-1] <= a_max)
+            if a_min is not None:
+                opti.subject_to(u[0, i-1] >= a_min)
+
+            # Add rate limit on control input (delta u)
+            if i == 1:
+                u_previous = self.pv_a - self.ego_a[0]  # current relative input
+                if du_max is not None:
+                    opti.subject_to(u[0, i-1] - u_previous <= du_max)
+                if du_min is not None:
+                    opti.subject_to(u[0, i-1] - u_previous >= du_min)
+            else:
+                if du_max is not None:
+                    opti.subject_to(u[0, i-1] - u[0, i-2] <= du_max)
+                if du_min is not None:
+                    opti.subject_to(u[0, i-1] - u[0, i-2] >= du_min)
+
+            # Add constraints on velocity (assuming x[1] is velocity if n >= 2)
+            if n >= 2:
+                if v_max is not None:
+                    opti.subject_to(x[1, i] <= v_max)
+                if v_min is not None:
+                    opti.subject_to(x[1, i] >= v_min)
+
+            # Reward and target tracking cost
+            opti.subject_to(rw[i] == (casC @ x[:, i])[0])
+            cost += 1 * (rw[i] - reward_target)**2
+
+            # Regularization on state and input
+            cost += casadi.mtimes([x[:, i].T, casQ, x[:, i]])
+            cost += casadi.mtimes([u[:, i-1].T, casR, u[:, i-1]])
+
+            # Cost on rate of change in control input
+            if i >= 2:
+                du = u[:, i-1] - u[:, i-2]
+                cost += R_du * casadi.mtimes([du.T, du])
+
+            # Relaxation margin to allow tracking feasibility
+            cost += 1e6 * e_r[i]**2
+            opti.subject_to(rw[i] >= reward_target - e_r[i])
+            opti.subject_to(rw[i] <= reward_target + e_r[i])
+
+        opti.minimize(cost)
+        opti.solver('fatrop', {"expand": True, "print_time": 0}, {"print_level": 0})
+
+        sol = opti.solve()
+
+        self.reward_tracking_x_opt = sol.value(x)
+        self.reward_tracking_u_opt = sol.value(u)
+        self.reward_tracking_rw_opt = sol.value(rw)
+        self.reward_tracking_err_opt = sol.value(e_r)
+
+        return self.reward_tracking_x_opt, self.reward_tracking_u_opt, self.reward_tracking_rw_opt
+        
     def update_ego_vehicle_state(self, ego_a_t, ego_v_t, ego_s_t, pv_a_t, pv_v_t, pv_s_t):
         # Update ego vehicle state over the horizon
         for i in range(self.h):
