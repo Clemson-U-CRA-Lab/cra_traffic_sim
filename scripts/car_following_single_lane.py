@@ -117,6 +117,7 @@ def main_single_lane_following():
                     for i in range(num_Sv):
                         # traffic_manager.traffic_update(dt=Dt, a=acc_t, v_tgt=spd_t, vehicle_id=i)
                         ds = traffic_manager.traffic_s[i+1] - traffic_manager.traffic_s[i]
+                        
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(s_ego_frenet + ds)
                         # ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(pitch_max=2 / RAD_TO_DEGREE, 
                         #                                                                                     pitch_min=-2 / RAD_TO_DEGREE, acc_max=4.0, acc_min=-6.0)
@@ -198,8 +199,8 @@ def main_single_lane_following():
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()
 
             # Publish road reference correction message
-            road_ref_correction_msg = road_reference_correction_msg_prep(ego_vehicle_pitch_from_acceleration)
-            road_ref_pub.publish(road_ref_correction_msg)
+            # road_ref_correction_msg = road_reference_correction_msg_prep(ego_vehicle_pitch_from_acceleration)
+            # road_ref_pub.publish(road_ref_correction_msg)
             
         except IndexError:
             print('Index error detected.')

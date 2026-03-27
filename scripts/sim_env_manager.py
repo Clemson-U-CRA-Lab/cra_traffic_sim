@@ -96,7 +96,7 @@ class CMI_traffic_sim:
             self.sub_lowlevel_bridge = rospy.Subscriber('/odom', Odometry, self.odom_callback)
             print('Use odom as state tracker')
         else:
-            self.sub_lowlevel_bridge = rospy.Subscriber('/bridge_to_lowlevel', Float64MultiArray, self.lowlevel_bridge_callback)
+            self.sub_lowlevel_bridge = rospy.Subscriber('/bridge_to_lowlevel_hack', Float64MultiArray, self.lowlevel_bridge_callback)
             print('Use lowlevel as state tracker')
 
         self.sub_joy = rospy.Subscriber("/joy", Joy, self.joy_callback)
@@ -107,7 +107,7 @@ class CMI_traffic_sim:
     def UpdateSimInfo(self, msg):
         # This is coming from road-side via veh2x_node
         simInfo = msg.data
-        self.ego_s = simInfo[0]
+        self.ego_s = simInfo[1]
         self.traffic_s[0] = self.ego_s
         self.traffic_v[0] = simInfo[2]
         self.traffic_alon[0] = simInfo[3]
@@ -286,7 +286,7 @@ class road_reader:
                 self.dist.append(line_data[3])
                 line_data = []
 
-    def find_traffic_vehicle_poses(self, dist_travelled, lane_id):
+    def find_traffic_vehicle_poses(self, dist_travelled, lane_id=0):
         dist_map = np.array(self.s)
         id_virtual = np.argmin(np.abs(dist_travelled - dist_map))
         ds = dist_travelled - self.s[id_virtual]

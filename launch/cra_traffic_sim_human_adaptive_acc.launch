@@ -4,7 +4,7 @@
     <arg name="dir" default="0"/>
     <arg name="use_preview" default="1"/>
     <arg name="sim_run" default="0"/>
-    <arg name="site_map" default="custom_map_dir0.csv"/>
+    <arg name="site_map" default="CMI_outerloop_mach_e.csv"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
