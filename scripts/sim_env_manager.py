@@ -501,21 +501,26 @@ class hololens_message_manager():
         self.serial = 0
         self.num_SVs_x = num_vehicles
         self.num_TL = num_traffic_lights
-        self.virtual_vehicle_id = np.zeros(max_num_vehicles, dtype=int).tolist()
-        self.S_v_x = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_y = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_z = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_pitch = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_yaw = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_acc = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_vx = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_vy = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_brake_status = np.zeros(max_num_vehicles, dtype=bool).tolist()
+        self.virtual_vehicle_id = [0]*max_num_vehicles
+        self.S_v_x = [0.0]*max_num_vehicles
+        self.S_v_y = [0.0]*max_num_vehicles
+        self.S_v_z = [0.0]*max_num_vehicles
+        self.S_v_pitch = [0.0]*max_num_vehicles
+        self.S_v_yaw = [0.0]*max_num_vehicles
+        self.S_v_acc = [0.0]*max_num_vehicles
+        self.S_v_vx = [0.0]*max_num_vehicles
+        self.S_v_vy = [0.0]*max_num_vehicles
+        self.S_v_brake_status = [False]*max_num_vehicles
 
-        self.TL_type = np.zeros(max_num_traffic_lights, dtype=float).tolist()
-        self.TL_ID = np.zeros(max_num_traffic_lights, dtype=float).tolist()
-        self.TL_status = np.zeros(max_num_traffic_lights, dtype=float).tolist()
-        self.TL_ds = np.zeros(max_num_traffic_lights, dtype=float).tolist()
+        self.TL_type = [0.0]*max_num_traffic_lights
+        self.TL_ID = [0.0]*max_num_traffic_lights
+        self.TL_status = [0.0]*max_num_traffic_lights
+        self.TL_ds = [0.0]*max_num_traffic_lights
+        self.TL_x = [0.0]*max_num_traffic_lights
+        self.TL_y = [0.0]*max_num_traffic_lights
+        self.TL_z = [0.0]*max_num_traffic_lights
+        self.TL_pitch = [0.0]*max_num_traffic_lights
+        self.TL_yaw = [0.0]*max_num_traffic_lights
 
         self.Ego_x = 0.0
         self.Ego_y = 0.0
@@ -553,6 +558,18 @@ class hololens_message_manager():
         self.Ego_acc = ego_acc
         self.Ego_omega = ego_omega
         self.Ego_v = ego_v
+
+    def update_traffic_light_state(self, traffic_light_id, tl_type, tl_id, tl_status, tl_ds,
+                                   tl_x=0.0, tl_y=0.0, tl_z=0.0, tl_pitch=0.0, tl_yaw=0.0):
+        self.TL_type[traffic_light_id] = tl_type
+        self.TL_ID[traffic_light_id] = tl_id
+        self.TL_status[traffic_light_id] = tl_status
+        self.TL_ds[traffic_light_id] = tl_ds
+        self.TL_x[traffic_light_id] = tl_x
+        self.TL_y[traffic_light_id] = tl_y
+        self.TL_z[traffic_light_id] = tl_z
+        self.TL_pitch[traffic_light_id] = tl_pitch
+        self.TL_yaw[traffic_light_id] = tl_yaw
     
     def construct_hololens_info_msg(self):
         self.hololens_message = hololens_info()
@@ -577,6 +594,16 @@ class hololens_message_manager():
             self.hololens_message.TL_ID[j] = self.TL_ID[j]
             self.hololens_message.TL_status[j] = self.TL_status[j]
             self.hololens_message.TL_ds[j] = self.TL_ds[j]
+            if hasattr(self.hololens_message, 'TL_x'):
+                self.hololens_message.TL_x[j] = self.TL_x[j]
+            if hasattr(self.hololens_message, 'TL_y'):
+                self.hololens_message.TL_y[j] = self.TL_y[j]
+            if hasattr(self.hololens_message, 'TL_z'):
+                self.hololens_message.TL_z[j] = self.TL_z[j]
+            if hasattr(self.hololens_message, 'TL_pitch'):
+                self.hololens_message.TL_pitch[j] = self.TL_pitch[j]
+            if hasattr(self.hololens_message, 'TL_yaw'):
+                self.hololens_message.TL_yaw[j] = self.TL_yaw[j]
 
         self.hololens_message.Ego_v = self.Ego_v
         self.hololens_message.advisory_spd = self.advisory_spd

@@ -16,6 +16,10 @@ from utils import *
 # Define constants
 RAD_TO_DEGREE = 52.296
 DEFAULT_SINGLE_LANE_SPACING = 30.0
+NUM_TRAFFIC_LIGHTS = 1
+TRAFFIC_LIGHT_ID = 0
+TRAFFIC_LIGHT_TYPE = 0.0
+TRAFFIC_LIGHT_STATUS = 0.0
 
 def road_reference_correction_msg_prep(ego_pitch):
     road_ref_correction_msg = ref_traj_correction()
@@ -69,7 +73,7 @@ def main_single_lane_following():
 
     traffic_manager = CMI_traffic_sim(max_num_vehicles=12, num_vehicles=num_Sv, sil_simulation=run_sim)
     virtual_traffic_sim_info_manager = hololens_message_manager(
-        num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=0)
+        num_vehicles=num_Sv, max_num_vehicles=200, max_num_traffic_lights=12, num_traffic_lights=NUM_TRAFFIC_LIGHTS)
     traffic_map_manager = road_reader(
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     traffic_map_manager.read_map_data()
@@ -167,22 +171,7 @@ def main_single_lane_following():
                                                                                    vx=traffic_manager.traffic_v[i],
                                                                                    vy=0.0,
                                                                                    brake_status=virtual_vehicle_brake)
-                    # Add traffic light information
-                    traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(s_tl)
-                    ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
-                                         ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
-                                         ego_vehicle_ref_poses[4]]
-                    local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(traffic_vehicle_poses, ego_vehicle_poses)
-                    virtual_traffic_sim_info_manager.update_virtual_vehicle_state(vehicle_id=i+1,
-                                                                                   x=local_traffic_vehicle_poses[0],
-                                                                                   y=-local_traffic_vehicle_poses[1], # Transfer to right hand coordinate
-                                                                                   z=local_traffic_vehicle_poses[2],
-                                                                                   yaw=-local_traffic_vehicle_poses[3], # Transfer to right hand coordinate
-                                                                                   pitch=-local_traffic_vehicle_poses[4], # Transfer to right hand coordinate
-                                                                                   acc=traffic_manager.traffic_alon[i],
-                                                                                   vx=traffic_manager.traffic_v[i],
-                                                                                   vy=0.0,
-                                                                                   brake_status=virtual_vehicle_brake)
+                    
                 else:
                     for i in range(num_Sv):
                         ds = get_single_lane_vehicle_spacing(traffic_manager, i, default_spacing)
@@ -207,6 +196,25 @@ def main_single_lane_following():
                                                                                    vx=traffic_manager.traffic_v[i],
                                                                                    vy=0.0,
                                                                                    brake_status=virtual_vehicle_brake)
+
+                traffic_light_pose = traffic_map_manager.find_traffic_vehicle_poses(s_tl)
+                ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                     ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                     ego_vehicle_ref_poses[4]]
+                local_traffic_light_pose = host_vehicle_coordinate_transformation(traffic_light_pose, ego_vehicle_poses)
+                traffic_light_ds = s_tl - s_ego_frenet
+
+                virtual_traffic_sim_info_manager.update_traffic_light_state(
+                    traffic_light_id=0,
+                    tl_type=TRAFFIC_LIGHT_TYPE,
+                    tl_id=TRAFFIC_LIGHT_ID,
+                    tl_status=TRAFFIC_LIGHT_STATUS,
+                    tl_ds=traffic_light_ds,
+                    tl_x=local_traffic_light_pose[0],
+                    tl_y=-local_traffic_light_pose[1], # Transfer to right hand coordinate
+                    tl_z=local_traffic_light_pose[2],
+                    tl_pitch=-local_traffic_light_pose[4], # Transfer to right hand coordinate
+                    tl_yaw=-local_traffic_light_pose[3]) # Transfer to right hand coordinate
                     
             # Publish the traffic information
             # Construct the ROS message
