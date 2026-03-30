@@ -185,7 +185,7 @@ if __name__ == "__main__":
         dt = time.time() - start_t - sim_t
         sim_t = time.time() - start_t
         try:
-            print(f"{bcolors.HEADER}Sim time: {anl_sim.sim_t:.2f}s | {bcolors.OKCYAN}Distance headway: {anl_sim.front_s - anl_sim.ego_s:.2f}m | {bcolors.OKCYAN}Speed gap: {anl_sim.front_v - anl_sim.ego_v:.2f}m/s | {bcolors.OKGREEN}Ego Speed: {anl_sim.ego_v*2.237:.2f}mph  | Ego Acc: {anl_sim.acc:.3f}m/s²{bcolors.ENDC}", end="\r")
+            print(f"{bcolors.HEADER}Sim time: {anl_sim.sim_t:.2f}s | {bcolors.OKCYAN}Distance headway: {anl_sim.front_s - anl_sim.ego_s:.2f}m | {bcolors.OKCYAN}Speed gap: {anl_sim.front_v - anl_sim.ego_v:.2f}m/s | {bcolors.OKCYAN}Acc gap: {anl_sim.front_a - anl_sim.acc:.3f}m/s² | {bcolors.OKGREEN}Ego Speed: {anl_sim.ego_v*2.237:.2f}mph  | Ego Acc: {anl_sim.acc:.3f}m/s²{bcolors.ENDC}", end="\r")
             anl_sim.step_forward_kinematic_bicycle(dt=dt)
             anl_sim.pub_odom()
             rate.sleep()

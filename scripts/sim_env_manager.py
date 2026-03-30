@@ -423,21 +423,26 @@ class hololens_message_manager():
         self.serial = 0
         self.num_SVs_x = num_vehicles
         self.num_TL = num_traffic_lights
-        self.virtual_vehicle_id = np.zeros(max_num_vehicles, dtype=int).tolist()
-        self.S_v_x = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_y = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_z = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_pitch = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_yaw = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_acc = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_vx = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_vy = np.zeros(max_num_vehicles, dtype=float).tolist()
-        self.S_v_brake_status = np.zeros(max_num_vehicles, dtype=bool).tolist()
+        self.virtual_vehicle_id = [0] * max_num_vehicles
+        self.S_v_x = [0.0] * max_num_vehicles
+        self.S_v_y = [0.0] * max_num_vehicles
+        self.S_v_z = [0.0] * max_num_vehicles
+        self.S_v_pitch = [0.0] * max_num_vehicles
+        self.S_v_yaw = [0.0] * max_num_vehicles
+        self.S_v_acc = [0.0] * max_num_vehicles
+        self.S_v_vx = [0.0] * max_num_vehicles
+        self.S_v_vy = [0.0] * max_num_vehicles
+        self.S_v_brake_status = [False] * max_num_vehicles
 
-        self.TL_type = np.zeros(max_num_traffic_lights, dtype=float).tolist()
-        self.TL_ID = np.zeros(max_num_traffic_lights, dtype=float).tolist()
-        self.TL_status = np.zeros(max_num_traffic_lights, dtype=float).tolist()
-        self.TL_ds = np.zeros(max_num_traffic_lights, dtype=float).tolist()
+        self.TL_type = [0.0] * max_num_traffic_lights
+        self.TL_ID = [0.0] * max_num_traffic_lights
+        self.TL_status = [0.0] * max_num_traffic_lights
+        self.TL_ds = [0.0] * max_num_traffic_lights
+        self.TL_x = [0.0] * max_num_traffic_lights
+        self.TL_y = [0.0] * max_num_traffic_lights
+        self.TL_z = [0.0] * max_num_traffic_lights
+        self.TL_pitch = [0.0] * max_num_traffic_lights
+        self.TL_yaw = [0.0] * max_num_traffic_lights
 
         self.Ego_x = 0.0
         self.Ego_y = 0.0
@@ -499,8 +504,20 @@ class hololens_message_manager():
             self.hololens_message.TL_ID[j] = self.TL_ID[j]
             self.hololens_message.TL_status[j] = self.TL_status[j]
             self.hololens_message.TL_ds[j] = self.TL_ds[j]
+            self.hololens_message.TL_x[j] = self.TL_x[j]
+            self.hololens_message.TL_y[j] = self.TL_y[j]
+            self.hololens_message.TL_z[j] = self.TL_z[j]
+            self.hololens_message.TL_pitch[j] = self.TL_pitch[j]
+            self.hololens_message.TL_yaw[j] = self.TL_yaw[j]
 
+        self.hololens_message.Ego_omega = self.Ego_omega
+        self.hololens_message.Ego_acc = self.Ego_acc
         self.hololens_message.Ego_v = self.Ego_v
+        self.hololens_message.Ego_x = self.Ego_x
+        self.hololens_message.Ego_y = self.Ego_y
+        self.hololens_message.Ego_z = self.Ego_z
+        self.hololens_message.Ego_pitch = self.Ego_pitch
+        self.hololens_message.Ego_yaw = self.Ego_yaw
         self.hololens_message.advisory_spd = self.advisory_spd
 
     def publish_virtual_sim_info(self):
@@ -749,6 +766,52 @@ class preceding_vehicle_spd_profile_generation():
         self.pv_a = pv_a_t
         self.pv_v = pv_v_t
         self.pv_s = pv_s_t
+
+    def generate_braking_profile(self, jerk=-0.5, max_deceleration=-4.0):
+        """Generate a smooth braking profile that ramps deceleration until the PV stops.
+
+        Args:
+            jerk (float): Constant deceleration ramp rate in m/s^3. Should be negative.
+            max_deceleration (float): Lower bound on acceleration in m/s^2. Should be negative.
+
+        Returns:
+            tuple: (pv_s_opt, pv_v_opt, pv_a_opt)
+        """
+        if jerk >= 0:
+            raise ValueError("jerk must be negative for braking.")
+        if max_deceleration >= 0:
+            raise ValueError("max_deceleration must be negative for braking.")
+
+        self.pv_s_opt = np.zeros(self.h)
+        self.pv_v_opt = np.zeros(self.h)
+        self.pv_a_opt = np.zeros(self.h)
+        self.pv_s_opt[0] = self.pv_s
+        self.pv_v_opt[0] = max(self.pv_v, 0.0)
+        self.pv_a_opt[0] = min(self.pv_a, 0.0)
+
+        for i in range(1, self.h):
+            if self.pv_v_opt[i - 1] <= 0.0:
+                self.pv_a_opt[i] = 0.0
+                self.pv_v_opt[i] = 0.0
+                self.pv_s_opt[i] = self.pv_s_opt[i - 1]
+                continue
+
+            next_acc = max(self.pv_a_opt[i - 1] + jerk * self.dT, max_deceleration)
+            next_v = self.pv_v_opt[i - 1] + next_acc * self.dT
+
+            if next_v <= 0.0:
+                stop_dt = self.pv_v_opt[i - 1] / max(-next_acc, 1e-6)
+                stop_dt = min(stop_dt, self.dT)
+                self.pv_s_opt[i] = self.pv_s_opt[i - 1] + self.pv_v_opt[i - 1] * stop_dt + 0.5 * next_acc * stop_dt ** 2
+                self.pv_v_opt[i] = 0.0
+                # Keep the braking command on the stopping step; later steps drop to zero once stopped.
+                self.pv_a_opt[i] = next_acc
+            else:
+                self.pv_s_opt[i] = self.pv_s_opt[i - 1] + self.pv_v_opt[i - 1] * self.dT + 0.5 * next_acc * self.dT ** 2
+                self.pv_v_opt[i] = next_v
+                self.pv_a_opt[i] = next_acc
+
+        return self.pv_s_opt, self.pv_v_opt, self.pv_a_opt
     
     def perform_nonlinear_optimization_for_pv_spd(self, ttc_i_ref, v_max, v_min, a_max, a_min):        
         # Create optimization problem
