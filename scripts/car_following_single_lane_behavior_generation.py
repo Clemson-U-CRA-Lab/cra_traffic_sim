@@ -8,7 +8,6 @@ from std_msgs.msg import Float64MultiArray, Int8
 
 import time
 import numpy as np
-import math
 import os
 from sim_env_manager import *
 from utils import *
@@ -59,15 +58,12 @@ def main_single_lane_following():
         map_filename=map_1_file, speed_profile_filename=spd_file, closed_track=closed_loop)
     front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(horizon_length=8, time_interval=pv_dt)
 
-    # Default mode for reward tracking, but disable if matrices fail to load
-    use_reward_tracking = True
-
     # Load A, B, C matrices required by perform_nonlinear_optimization_for_reward_tracking
     matrix_data_folder = os.path.join(parent_dir, "pv_scenario_generation_workspace", "data_driven_workspace")
     A, B, C = front_vehicle_motion_generator.load_matrices_from_file(data_folder_path=matrix_data_folder)
     if A is None or B is None or C is None:
-        rospy.logerr(f"Failed to load model matrices from {matrix_data_folder}. Reward tracking will be disabled.")
-        use_reward_tracking = False
+        rospy.logerr(f"Failed to load reward-tracking model matrices from {matrix_data_folder}.")
+        raise RuntimeError("Reward tracking model data is required for behavior generation.")
 
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
@@ -83,7 +79,6 @@ def main_single_lane_following():
     sim_t = 0.0
     ego_s_init = 0.0
     init_gap = 8.0
-    # Front vehicle control mode (see ttc_i_tracking_scene) is set above when loading matrices
     reward_Q = 1.0
     reward_R = 10.0
     reward_R_du = 100.0
@@ -147,41 +142,24 @@ def main_single_lane_following():
                                                                             pv_v_t=traffic_manager.traffic_v[0],
                                                                             pv_s_t=traffic_manager.traffic_s[0])
                     
-                    # TTCi reference from ttc_i_tracking_scene
-                    gap = traffic_manager.traffic_s[0] - traffic_manager.ego_s
-                    ttc_i_ref = 0.1534 / (1.0 + math.exp(0.195 * (gap - 18.36)))
+                    front_vehicle_motion_generator.perform_nonlinear_optimization_for_reward_tracking(
+                        Q=reward_Q,
+                        R=reward_R,
+                        reward_target=reward_target,
+                        a_max=3.0,
+                        a_min=-3.0,
+                        v_max=15.0,
+                        v_min=0.0,
+                        R_du=reward_R_du)
+
+                    front_a_target = traffic_manager.ego_acc + float(front_vehicle_motion_generator.reward_tracking_u_opt[0])
+                    front_a = np.clip(traffic_manager.traffic_alon[0], -3.0, 3.0)
+                    traffic_manager.traffic_alon[0] = front_a + 0.05 * (front_a_target - front_a)
                     
-                    if use_reward_tracking:
-                        front_vehicle_motion_generator.perform_nonlinear_optimization_for_reward_tracking(
-                            Q=reward_Q,
-                            R=reward_R,
-                            reward_target=reward_target,
-                            a_max=3.0,
-                            a_min=-3.0,
-                            v_max=15.0,
-                            v_min=0.0,
-                            R_du=reward_R_du)
-                        
-                        # following the ttc_i_tracking_scene update rule
-                        front_a_target = traffic_manager.ego_acc + float(front_vehicle_motion_generator.reward_tracking_u_opt[0])
-                        front_a = np.clip(traffic_manager.traffic_alon[0], -3.0, 3.0)
-                        traffic_manager.traffic_alon[0] = front_a + 0.05 * (front_a_target - front_a)
-                        
-                    else:
-                        print('TTCi reference is: ', ttc_i_ref)
-                        front_vehicle_motion_generator.perform_nonlinear_optimization_for_pv_spd(
-                            ttc_i_ref=ttc_i_ref,
-                            v_max=15.0,
-                            v_min=0.0,
-                            a_max=3.0,
-                            a_min=-5.0)
-                        
-                        traffic_manager.traffic_alon[0] = float(front_vehicle_motion_generator.pv_a_opt[0])
-                        
                     # integrate front vehicle motion using kinematics
                     traffic_manager.traffic_v[0] = traffic_manager.traffic_v[0] + traffic_manager.traffic_alon[0] * Dt
                     traffic_manager.traffic_s[0] = traffic_manager.traffic_s[0] + traffic_manager.traffic_v[0] * Dt + 0.5 * traffic_manager.traffic_alon[0] * Dt**2
-
+                    
                     # Update front vehicle predicted sequences (match car_following_single_lane.py style)
                     front_s_t[0] = round(traffic_manager.traffic_s[0], 3)
                     front_v_t[0] = round(traffic_manager.traffic_v[0], 3)
