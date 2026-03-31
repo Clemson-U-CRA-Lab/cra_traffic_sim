@@ -4,7 +4,7 @@
     <arg name="dir" default="0"/>
     <arg name="use_preview" default="1"/>
     <arg name="sim_run" default="0"/>
-    <arg name="site_map" default="CMI_outerloop_mach_e.csv"/>
+    <arg name="site_map" default="CMI_outerloop_v2x.csv"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
@@ -20,6 +20,6 @@
         <node pkg="cra_traffic_sim" type="anl_sim.py" name="anl_sim" output="screen" />
     </group>
 
-    <!-- <include file="$(find hololens_ros_communication)/launch/hololens_sender.launch" /> -->
+    <include file="$(find hololens_ros_communication)/launch/hololens_sender.launch" />
     <!-- <node pkg="low_level_bridge" name="bridge" type="bridge_KF_lanechange_MachE.py" output="screen"/> -->
 </launch>

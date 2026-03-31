@@ -87,7 +87,8 @@ def main_single_lane_following():
     # start_t = time.time()
     prev_t = time.time()
     sim_t = 0.0
-    s_tl = 150.0
+    s_tl = 0.0
+    s_tl_init_gap = 180.0
 
     while not rospy.is_shutdown():
         try:
@@ -127,7 +128,7 @@ def main_single_lane_following():
             if (sim_t < 0.5 and traffic_manager.sim_start):
                 # Update simulation time
                 sim_t += Dt
-                s_tl = s_ego_frenet + 150.0
+                s_tl = s_ego_frenet + s_tl_init_gap
                 continue
             else:
                 msg_counter += 1
