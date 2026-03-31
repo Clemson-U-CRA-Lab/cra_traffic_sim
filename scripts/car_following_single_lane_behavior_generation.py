@@ -64,15 +64,16 @@ def main_single_lane_following():
                                       speed_profile_filename=spd_file, 
                                       closed_track=closed_loop)
     
-    front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(horizon_length=8, time_interval=pv_dt)
-
+    front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(horizon_length=8, 
+                                                                              time_interval=pv_dt)
+    
     # Load A, B, C matrices required by perform_nonlinear_optimization_for_reward_tracking
     matrix_data_folder = os.path.join(parent_dir, "pv_scenario_generation_workspace", "data_driven_workspace")
     A, B, C = front_vehicle_motion_generator.load_matrices_from_file(data_folder_path=matrix_data_folder)
     if A is None or B is None or C is None:
         rospy.logerr(f"Failed to load reward-tracking model matrices from {matrix_data_folder}.")
         raise RuntimeError("Reward tracking model data is required for behavior generation.")
-
+    
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
     
@@ -95,6 +96,7 @@ def main_single_lane_following():
     maintain_motion_duration = 5.0
     braking_jerk = -0.05
     braking_max_deceleration = -4.0
+    front_vehicle_speed_limit = 20.0
 
     while not rospy.is_shutdown():
         try:
@@ -137,7 +139,11 @@ def main_single_lane_following():
                 # Update simulation time
                 sim_t += Dt
                 # Find initial distance as start distance on the map
-                traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=init_gap, line_number=0, vehicle_id=0, vehicle_id_in_lane=0)
+                traffic_manager.traffic_initialization(s_ego=s_ego_frenet, 
+                                                       ds=init_gap, 
+                                                       line_number=0, 
+                                                       vehicle_id=0, 
+                                                       vehicle_id_in_lane=0)
                 ego_s_init = s_ego_frenet
                 continue
             else:
@@ -154,24 +160,32 @@ def main_single_lane_following():
                                                                             pv_a_t=traffic_manager.traffic_alon[0],
                                                                             pv_v_t=traffic_manager.traffic_v[0],
                                                                             pv_s_t=traffic_manager.traffic_s[0])
+                    
+                    # Initialize the future states sequence for the front vehicle
                     front_profile_s = None
                     front_profile_v = None
                     front_profile_a = None
+                    
+                    # Update relative maximum acceleration and speed based on current ego vehicle's acceleration
+                    d_a_max = 4.0 - traffic_manager.ego_acc
+                    d_a_min = -4.0 - traffic_manager.ego_acc
+                    d_v_max = front_vehicle_speed_limit - traffic_manager.ego_v
+                    d_v_min = 0.0 - traffic_manager.ego_v
 
                     if sim_t < reward_tracking_duration:
                         front_vehicle_motion_generator.perform_nonlinear_optimization_for_reward_tracking(
                             Q=reward_Q,
                             R=reward_R,
                             reward_target=reward_target,
-                            a_max=3.0,
-                            a_min=-3.0,
-                            v_max=15.0,
-                            v_min=0.0,
+                            a_max=d_a_max,
+                            a_min=d_a_min,
+                            v_max=d_v_max,
+                            v_min=d_v_min,
                             R_du=reward_R_du)
 
                         front_a_target = traffic_manager.ego_acc + float(front_vehicle_motion_generator.reward_tracking_u_opt[0])
-                        front_a = np.clip(traffic_manager.traffic_alon[0], -3.0, 3.0)
-                        traffic_manager.traffic_alon[0] = front_a + 0.05 * (front_a_target - front_a)
+                        front_a = np.clip(traffic_manager.traffic_alon[0], -4.0, 4.0)
+                        traffic_manager.traffic_alon[0] = front_a + 0.2 * (front_a_target - front_a)
                     elif sim_t < reward_tracking_duration + maintain_motion_duration:
                         traffic_manager.traffic_alon[0] = 0.0
                     else:
@@ -184,7 +198,7 @@ def main_single_lane_following():
                             traffic_manager.traffic_alon[0] = 0.0
 
                     prev_front_v = traffic_manager.traffic_v[0]
-                    traffic_manager.traffic_v[0] = np.clip(prev_front_v + traffic_manager.traffic_alon[0] * Dt, 0.0, 20.0)
+                    traffic_manager.traffic_v[0] = np.clip(prev_front_v + traffic_manager.traffic_alon[0] * Dt, 0.0, front_vehicle_speed_limit)
                     traffic_manager.traffic_s[0] = traffic_manager.traffic_s[0] + prev_front_v * Dt + 0.5 * traffic_manager.traffic_alon[0] * Dt**2
 
                     if traffic_manager.traffic_v[0] <= 0.0:
@@ -201,16 +215,16 @@ def main_single_lane_following():
                             front_v_t[i] = round(front_profile_v[i], 3)
                             front_a_t[i] = round(front_profile_a[i], 3)
                         elif not use_preview:
-                            if front_v_t[i - 1] >= 20:
+                            if front_v_t[i - 1] >= front_vehicle_speed_limit:
                                 front_s_t[i] = round(front_s_t[i - 1] + front_v_t[i - 1] * pv_dt, 3)
                                 front_a_t[i] = 0.0
-                                front_v_t[i] = 20.0
+                                front_v_t[i] = front_vehicle_speed_limit
                             elif front_v_t[i - 1] <= 0:
                                 front_s_t[i] = front_s_t[i - 1]
                                 front_a_t[i] = 0.0
                                 front_v_t[i] = 0.0
                             else:
-                                front_v_t[i] = round(np.clip(front_v_t[i - 1] + front_a_t[i - 1] * pv_dt, 0, 20), 3)
+                                front_v_t[i] = round(np.clip(front_v_t[i - 1] + front_a_t[i - 1] * pv_dt, 0, front_vehicle_speed_limit), 3)
                                 front_s_t[i] = round(front_s_t[i - 1] + front_v_t[i - 1] * pv_dt + 0.5 * front_a_t[i - 1] * pv_dt ** 2, 3)
                                 front_a_t[i] = front_a_t[i - 1]
                         else:

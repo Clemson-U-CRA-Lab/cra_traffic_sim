@@ -3,7 +3,7 @@
     <arg name="pv_speed_profile" default="I85_nycccol.csv" />
     <arg name="dir" default="0"/>
     <arg name="use_preview" default="0"/>
-    <arg name="sim_run" default="0"/>
+    <arg name="sim_run" default="1"/>
     <arg name="site_map" default="custom_map_dir0.csv"/>
 
     <param name="runDirection" value="$(arg dir)"/>
