@@ -91,6 +91,8 @@ class CMI_traffic_sim:
 
         self.traffic_initialized = False
         self.sim_start = False
+        self.behavior_generation_requested = False
+        self._prev_behavior_button_pressed = False
         
         if sil_simulation:
             self.sub_lowlevel_bridge = rospy.Subscriber('/odom', Odometry, self.odom_callback)
@@ -110,6 +112,15 @@ class CMI_traffic_sim:
             self.sim_start = False
         if msg.buttons[5]:
             self.sim_start = True
+        behavior_button_pressed = len(msg.buttons) > 3 and bool(msg.buttons[3])
+        if behavior_button_pressed and not self._prev_behavior_button_pressed:
+            self.behavior_generation_requested = True
+        self._prev_behavior_button_pressed = behavior_button_pressed
+
+    def consume_behavior_generation_request(self):
+        request_active = self.behavior_generation_requested
+        self.behavior_generation_requested = False
+        return request_active
             
     def odom_callback(self, msg):
         self.ego_x = msg.pose.pose.position.x
