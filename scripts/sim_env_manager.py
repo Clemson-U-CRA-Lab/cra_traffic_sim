@@ -563,6 +563,7 @@ class preceding_vehicle_spd_profile_generation():
         self.reward_tracking_x_opt = None
         self.reward_tracking_rw_opt = None
         self.reward_tracking_err_opt = None
+        self.reward_tracking_target_window = None
         
     def load_matrices_from_file(self, data_folder_path=None):
         """Load A, B, C matrices from CSV files in the data_driven_workspace folder.
@@ -616,11 +617,11 @@ class preceding_vehicle_spd_profile_generation():
         return np.array([ds, dv, ds**2, dv**2], dtype=float)
 
     def perform_nonlinear_optimization_for_reward_tracking(self, Q, R, reward_target, a_max=None, a_min=None, v_max=None, v_min=None, du_max=None, du_min=None, R_du=0.0):
-        """Optimize PV motion to track a target reward using lifted state-space model.
+        """Optimize PV motion to track a reward reference using lifted state-space model.
 
         Q: n x n state cost weight matrix (or scalar/diagonal vector)
         R: m x m control cost weight matrix (or scalar/diagonal vector)
-        reward_target: scalar target reward value
+        reward_target: scalar target reward value or a horizon-length reward reference window
         a_max: maximum acceleration (optional)
         a_min: minimum acceleration (optional)
         v_max: maximum velocity (optional)
@@ -630,8 +631,14 @@ class preceding_vehicle_spd_profile_generation():
         R_du: cost weight for rate of change in control input (default 0.0)
         """
         # Input checks
-        if not isinstance(reward_target, (int, float)):
-            raise ValueError("reward_target must be a scalar number.")
+        reward_target_array = np.asarray(reward_target, dtype=float)
+        if reward_target_array.ndim == 0 or reward_target_array.size == 1:
+            reward_target_window = np.full(self.h, float(reward_target_array.reshape(-1)[0]))
+        else:
+            reward_target_window = reward_target_array.flatten()
+            if reward_target_window.shape[0] != self.h:
+                raise ValueError(f"reward_target must be a scalar or a vector of length {self.h}.")
+
         if du_max is not None and not isinstance(du_max, (int, float)):
             raise ValueError("du_max must be numeric.")
         if du_min is not None and not isinstance(du_min, (int, float)):
@@ -689,6 +696,7 @@ class preceding_vehicle_spd_profile_generation():
         casC = casadi.DM(self.C)
         casQ = casadi.DM(Q)
         casR = casadi.DM(R)
+        casRewardTarget = casadi.DM(reward_target_window)
 
         opti = casadi.Opti()
         x = opti.variable(n, self.h)
@@ -733,7 +741,8 @@ class preceding_vehicle_spd_profile_generation():
 
             # Reward and target tracking cost
             opti.subject_to(rw[i] == (casC @ x[:, i])[0])
-            cost += 1 * (rw[i] - reward_target)**2
+            reward_target_i = casRewardTarget[i]
+            cost += 1 * (rw[i] - reward_target_i)**2
 
             # Regularization on state and input
             cost += casadi.mtimes([x[:, i].T, casQ, x[:, i]])
@@ -746,8 +755,8 @@ class preceding_vehicle_spd_profile_generation():
 
             # Relaxation margin to allow tracking feasibility
             cost += 1e6 * e_r[i]**2
-            opti.subject_to(rw[i] >= reward_target - e_r[i])
-            opti.subject_to(rw[i] <= reward_target + e_r[i])
+            opti.subject_to(rw[i] >= reward_target_i - e_r[i])
+            opti.subject_to(rw[i] <= reward_target_i + e_r[i])
 
         opti.minimize(cost)
         opti.solver('fatrop', {"expand": True, "print_time": 0}, {"print_level": 0})
@@ -758,6 +767,7 @@ class preceding_vehicle_spd_profile_generation():
         self.reward_tracking_u_opt = sol.value(u)
         self.reward_tracking_rw_opt = sol.value(rw)
         self.reward_tracking_err_opt = sol.value(e_r)
+        self.reward_tracking_target_window = reward_target_window
 
         return self.reward_tracking_x_opt, self.reward_tracking_u_opt, self.reward_tracking_rw_opt
         

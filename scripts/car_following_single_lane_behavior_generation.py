@@ -67,6 +67,15 @@ def compute_return_to_cycle_acceleration(front_s, front_v, cycle_ref, front_vehi
     return float(np.clip(commanded_acc, -4.0, 4.0))
 
 
+def build_linear_reward_target_window(current_time, horizon_length, time_interval, target_max, ramp_duration):
+    if ramp_duration <= 0.0:
+        raise ValueError("ramp_duration must be positive.")
+
+    future_time_window = current_time + np.arange(horizon_length) * time_interval
+    reward_progress = np.clip(future_time_window / ramp_duration, 0.0, 1.0)
+    return target_max * reward_progress
+
+
 def build_front_preview(
     mode,
     sim_t,
@@ -184,11 +193,12 @@ def main_single_lane_following():
     ego_s_init = 0.0
     init_gap = 8.0
 
+    reward_tracking_duration = 5.0
+    reward_target_ramp_duration = reward_tracking_duration
+    reward_target_max = 20.0
     reward_Q = 1.0
     reward_R = 10.0
     reward_R_du = 100.0
-    reward_target = 20.0
-    reward_tracking_duration = 5.0
     maintain_motion_duration = 5.0
     behavior_generation_duration = reward_tracking_duration + maintain_motion_duration
     front_vehicle_speed_limit = 20.0
@@ -277,10 +287,17 @@ def main_single_lane_following():
                         behavior_elapsed = sim_t - behavior_generation_start_time
 
                         if behavior_elapsed < reward_tracking_duration:
+                            reward_target_window = build_linear_reward_target_window(
+                                current_time=behavior_elapsed,
+                                horizon_length=front_vehicle_motion_generator.h,
+                                time_interval=pv_dt,
+                                target_max=reward_target_max,
+                                ramp_duration=reward_target_ramp_duration,
+                            )
                             front_vehicle_motion_generator.perform_nonlinear_optimization_for_reward_tracking(
                                 Q=reward_Q,
                                 R=reward_R,
-                                reward_target=reward_target,
+                                reward_target=reward_target_window,
                                 a_max=d_a_max,
                                 a_min=d_a_min,
                                 v_max=d_v_max,
