@@ -96,10 +96,10 @@ class CMI_traffic_sim:
 
         default_tracked_vehicle_ids = [0, 1]
         self.kalman_tracked_vehicle_ids = rospy.get_param("~kalman_tracked_vehicle_ids", default_tracked_vehicle_ids)
-        self.kalman_process_noise = np.diag(rospy.get_param("~kalman_process_noise_diag", [10.5, 5.0, 8.0]))
-        self.kalman_measurement_noise = np.diag(rospy.get_param("~kalman_measurement_noise_diag", [20.0, 10.0, 15.0]))
+        self.kalman_process_noise = np.diag(rospy.get_param("~kalman_process_noise_diag", [20.5, 25.0, 28.0]))
+        self.kalman_measurement_noise = np.diag(rospy.get_param("~kalman_measurement_noise_diag", [40.0, 20.0, 30.0]))
         self.kalman_initial_covariance = np.diag(rospy.get_param("~kalman_initial_covariance_diag", [1.0, 1.0, 1.0]))
-        self.kalman_max_dt = float(rospy.get_param("~kalman_max_dt", 0.2))
+        self.kalman_max_dt = float(rospy.get_param("~kalman_max_dt", 0.1))
         self.traffic_kalman_filters = [self._create_kalman_filter_state() for _ in range(max_num_vehicles)]
         
         if sil_simulation:
@@ -534,7 +534,7 @@ class hololens_message_manager():
         self.advisory_spd = 0.0
 
         self.pub_virtual_traffic_info = rospy.Publisher(
-            '/virtual_sim_info_mache_debug', hololens_info, queue_size=1)
+            '/virtual_sim_info_mache', hololens_info, queue_size=1)
     
     def update_virtual_vehicle_state(self, vehicle_id, x, y, z, pitch, yaw, acc, vx, vy, brake_status):
         self.virtual_vehicle_id[vehicle_id] = vehicle_id
