@@ -28,8 +28,8 @@ def road_reference_correction_msg_prep(ego_pitch):
     return road_ref_correction_msg
 
 
-def clamp_vehicle_state(front_s, front_v, front_a, dt, speed_limit):
-    clipped_acc = float(np.clip(front_a, -4.0, 4.0))
+def clamp_vehicle_state(front_s, front_v, front_a, dt, speed_limit, acc_min, acc_max):
+    clipped_acc = float(np.clip(front_a, acc_min, acc_max))
     next_v = float(np.clip(front_v + clipped_acc * dt, 0.0, speed_limit))
     next_s = float(front_s + front_v * dt + 0.5 * clipped_acc * dt ** 2)
     if next_v <= 0.0:
@@ -57,14 +57,14 @@ def apply_cycle_reference_with_offset(traffic_manager, cycle_ref, distance_offse
     )
 
 
-def compute_return_to_cycle_acceleration(front_s, front_v, cycle_ref, front_vehicle_speed_limit, dt):
+def compute_return_to_cycle_acceleration(front_s, front_v, cycle_ref, front_vehicle_speed_limit, dt, acc_min, acc_max):
     dt_safe = max(dt, 1e-3)
     speed_error = cycle_ref["speed"] - front_v
     position_error = cycle_ref["world_s"] - front_s
     target_velocity_from_position = np.clip(position_error / dt_safe, -front_vehicle_speed_limit, front_vehicle_speed_limit)
     velocity_tracking_error = target_velocity_from_position - front_v
     commanded_acc = 0.8 * speed_error + 0.15 * velocity_tracking_error + cycle_ref["acc"]
-    return float(np.clip(commanded_acc, -4.0, 4.0))
+    return float(np.clip(commanded_acc, acc_min, acc_max))
 
 
 def build_linear_reward_target_window(current_time, horizon_length, time_interval, target_max, ramp_duration):
@@ -89,6 +89,8 @@ def build_front_preview(
     ego_s_init,
     init_gap,
     driving_cycle_distance_offset,
+    front_acc_min,
+    front_acc_max,
 ):
     front_s_t = [0.0] * 40
     front_v_t = [0.0] * 40
@@ -110,11 +112,27 @@ def build_front_preview(
 
         if mode == RETURN_TO_CYCLE_MODE:
             cycle_ref = get_cycle_reference(traffic_map_manager, sim_t + i * pv_dt, ego_s_init, init_gap)
-            preview_a = compute_return_to_cycle_acceleration(prev_s, prev_v, cycle_ref, front_vehicle_speed_limit, pv_dt)
+            preview_a = compute_return_to_cycle_acceleration(
+                prev_s,
+                prev_v,
+                cycle_ref,
+                front_vehicle_speed_limit,
+                pv_dt,
+                front_acc_min,
+                front_acc_max,
+            )
         else:
             preview_a = front_a_t[i - 1]
 
-        next_s, next_v, next_a = clamp_vehicle_state(prev_s, prev_v, preview_a, pv_dt, front_vehicle_speed_limit)
+        next_s, next_v, next_a = clamp_vehicle_state(
+            prev_s,
+            prev_v,
+            preview_a,
+            pv_dt,
+            front_vehicle_speed_limit,
+            front_acc_min,
+            front_acc_max,
+        )
         front_s_t[i] = round(next_s, 3)
         front_v_t[i] = round(next_v, 3)
         front_a_t[i] = round(next_a, 3)
@@ -141,6 +159,7 @@ def main_single_lane_following():
     pv_dt = float(rospy.get_param("/pv_states_dt"))
     use_preview = bool(rospy.get_param("/use_preview"))
     run_direction = rospy.get_param("/runDirection")
+    koopman_lift_method = rospy.get_param("/koopman_lift_method", "auto")
 
     map_1_file = os.path.join(parent_dir, "maps", map_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
@@ -174,10 +193,20 @@ def main_single_lane_following():
     )
 
     matrix_data_folder = os.path.join(parent_dir, "pv_scenario_generation_workspace", "data_driven_workspace")
-    A, B, C = front_vehicle_motion_generator.load_matrices_from_file(data_folder_path=matrix_data_folder)
+    A, B, C = front_vehicle_motion_generator.load_matrices_from_file(
+        data_folder_path=matrix_data_folder,
+        preferred_lift_method=koopman_lift_method,
+    )
     if A is None or B is None or C is None:
         rospy.logerr(f"Failed to load reward-tracking model matrices from {matrix_data_folder}.")
         raise RuntimeError("Reward tracking model data is required for behavior generation.")
+    rospy.loginfo(
+        "Loaded Koopman model with lift %s (A%s, B%s, C%s).",
+        front_vehicle_motion_generator.koopman_lift_method,
+        A.shape,
+        B.shape,
+        C.shape,
+    )
 
     traffic_map_manager.read_map_data()
     traffic_map_manager.read_speed_profile()
@@ -193,7 +222,7 @@ def main_single_lane_following():
     ego_s_init = 0.0
     init_gap = 8.0
 
-    reward_tracking_duration = 5.0
+    reward_tracking_duration = 10.0
     reward_target_ramp_duration = reward_tracking_duration
     reward_target_max = 20.0
     reward_Q = 1.0
@@ -202,6 +231,8 @@ def main_single_lane_following():
     maintain_motion_duration = 5.0
     behavior_generation_duration = reward_tracking_duration + maintain_motion_duration
     front_vehicle_speed_limit = 20.0
+    front_vehicle_acc_max = 4.0
+    front_vehicle_acc_min = -4.0
     return_speed_tolerance = 0.3
     driving_cycle_distance_offset = 0.0
 
@@ -280,8 +311,8 @@ def main_single_lane_following():
                             pv_s_t=traffic_manager.traffic_s[0],
                         )
 
-                        d_a_max = 4.0 - traffic_manager.ego_acc
-                        d_a_min = -4.0 - traffic_manager.ego_acc
+                        d_a_max = front_vehicle_acc_max - traffic_manager.ego_acc
+                        d_a_min = front_vehicle_acc_min - traffic_manager.ego_acc
                         d_v_max = front_vehicle_speed_limit - traffic_manager.ego_v
                         d_v_min = 0.0 - traffic_manager.ego_v
                         behavior_elapsed = sim_t - behavior_generation_start_time
@@ -305,8 +336,9 @@ def main_single_lane_following():
                                 R_du=reward_R_du,
                             )
                             front_a_target = traffic_manager.ego_acc + float(front_vehicle_motion_generator.reward_tracking_u_opt[0])
-                            front_a = float(np.clip(traffic_manager.traffic_alon[0], -4.0, 4.0))
+                            front_a = float(np.clip(traffic_manager.traffic_alon[0], front_vehicle_acc_min, front_vehicle_acc_max))
                             commanded_acc = front_a + 0.2 * (front_a_target - front_a)
+                            commanded_acc = float(np.clip(commanded_acc, front_vehicle_acc_min, front_vehicle_acc_max))
                         elif behavior_elapsed < behavior_generation_duration:
                             commanded_acc = 0.0
                         else:
@@ -317,6 +349,8 @@ def main_single_lane_following():
                                 cycle_ref,
                                 front_vehicle_speed_limit,
                                 Dt,
+                                front_vehicle_acc_min,
+                                front_vehicle_acc_max,
                             )
                             rospy.loginfo("Front vehicle switched to return-to-cycle mode.")
 
@@ -326,6 +360,8 @@ def main_single_lane_following():
                             commanded_acc,
                             Dt,
                             front_vehicle_speed_limit,
+                            front_vehicle_acc_min,
+                            front_vehicle_acc_max,
                         )
                         traffic_manager.traffic_s[0] = next_s
                         traffic_manager.traffic_v[0] = next_v
@@ -337,6 +373,8 @@ def main_single_lane_following():
                             cycle_ref,
                             front_vehicle_speed_limit,
                             Dt,
+                            front_vehicle_acc_min,
+                            front_vehicle_acc_max,
                         )
                         next_s, next_v, next_a = clamp_vehicle_state(
                             traffic_manager.traffic_s[0],
@@ -344,6 +382,8 @@ def main_single_lane_following():
                             commanded_acc,
                             Dt,
                             front_vehicle_speed_limit,
+                            front_vehicle_acc_min,
+                            front_vehicle_acc_max,
                         )
                         traffic_manager.traffic_s[0] = next_s
                         traffic_manager.traffic_v[0] = next_v
@@ -378,6 +418,8 @@ def main_single_lane_following():
                         ego_s_init=ego_s_init,
                         init_gap=init_gap,
                         driving_cycle_distance_offset=driving_cycle_distance_offset,
+                        front_acc_min=front_vehicle_acc_min,
+                        front_acc_max=front_vehicle_acc_max,
                     )
 
                     for i in range(num_Sv):

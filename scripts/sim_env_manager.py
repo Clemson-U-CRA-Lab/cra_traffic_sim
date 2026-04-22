@@ -16,6 +16,7 @@ import time
 import numpy as np
 import math
 import os
+import re
 import casadi
 from utils import *
 class stanley_vehicle_controller():
@@ -557,6 +558,15 @@ class preceding_vehicle_spd_profile_generation():
         self.A = None
         self.B = None
         self.C = None
+        self.koopman_lift_method = None
+        self.edmd_sigma = 0.5
+        self.edmd_ranges = {
+            "ds": (5.0, 50.0),
+            "dv": (-10.0, 10.0),
+            "ttci": (-0.5, 0.5),
+            "thwi": (0.0, 2.5),
+        }
+        self.edmd_centers = None
         
         # Initialize for storing optimal u
         self.reward_tracking_u_opt = None
@@ -565,12 +575,39 @@ class preceding_vehicle_spd_profile_generation():
         self.reward_tracking_err_opt = None
         self.reward_tracking_target_window = None
         
-    def load_matrices_from_file(self, data_folder_path=None):
+    def _infer_lift_configuration(self, state_dim):
+        if state_dim == 4:
+            self.koopman_lift_method = "sindy_baseline"
+            self.edmd_centers = None
+            return
+        if state_dim == 6:
+            self.koopman_lift_method = "sindy_ttci_thwi"
+            self.edmd_centers = None
+            return
+
+        edmd_grid_count = round(state_dim ** 0.25)
+        if edmd_grid_count ** 4 != state_dim:
+            raise ValueError(
+                f"Unsupported Koopman state dimension {state_dim}. "
+                "Expected 4, 6, or an EDMD grid with equal centers per feature."
+            )
+
+        self.koopman_lift_method = "edmd_ttci_thwi"
+        self.edmd_centers = {
+            "ds": np.linspace(*self.edmd_ranges["ds"], edmd_grid_count),
+            "dv": np.linspace(*self.edmd_ranges["dv"], edmd_grid_count),
+            "ttci": np.linspace(*self.edmd_ranges["ttci"], edmd_grid_count),
+            "thwi": np.linspace(*self.edmd_ranges["thwi"], edmd_grid_count),
+        }
+
+    def load_matrices_from_file(self, data_folder_path=None, preferred_lift_method="auto"):
         """Load A, B, C matrices from CSV files in the data_driven_workspace folder.
         
         Args:
             data_folder_path (str): Path to the data_driven_workspace folder. 
                                    If None, uses the default relative path.
+            preferred_lift_method (str): One of "auto", "sindy_baseline",
+                                        "sindy_ttci_thwi", or "edmd_ttci_thwi".
         
         Returns:
             tuple: (A, B, C) - numpy arrays containing the loaded matrices
@@ -582,9 +619,48 @@ class preceding_vehicle_spd_profile_generation():
             
         # Load matrices from CSV files
         try:
-            A_file = os.path.join(data_folder_path, 'A_4x4_matrix.csv')
-            B_file = os.path.join(data_folder_path, 'B_4x1_matrix.csv')
-            C_file = os.path.join(data_folder_path, 'C_1x4_matrix.csv')
+            matrix_sets = []
+            for filename in os.listdir(data_folder_path):
+                match = re.fullmatch(r"A_(\d+)x(\d+)_matrix\.csv", filename)
+                if not match:
+                    continue
+                rows = int(match.group(1))
+                cols = int(match.group(2))
+                if rows != cols:
+                    continue
+                b_name = f"B_{rows}x1_matrix.csv"
+                c_name = f"C_1x{rows}_matrix.csv"
+                a_path = os.path.join(data_folder_path, filename)
+                b_path = os.path.join(data_folder_path, b_name)
+                c_path = os.path.join(data_folder_path, c_name)
+                if os.path.exists(b_path) and os.path.exists(c_path):
+                    matrix_sets.append((rows, a_path, b_path, c_path))
+
+            if not matrix_sets:
+                raise FileNotFoundError("Could not find a supported A/B/C matrix set.")
+
+            matrix_sets.sort(key=lambda item: item[0], reverse=True)
+            selected_matrix_set = None
+            if preferred_lift_method == "auto":
+                selected_matrix_set = matrix_sets[0]
+            elif preferred_lift_method == "sindy_baseline":
+                selected_matrix_set = next((item for item in matrix_sets if item[0] == 4), None)
+            elif preferred_lift_method == "sindy_ttci_thwi":
+                selected_matrix_set = next((item for item in matrix_sets if item[0] == 6), None)
+            elif preferred_lift_method == "edmd_ttci_thwi":
+                selected_matrix_set = next((item for item in matrix_sets if item[0] not in {4, 6}), None)
+            else:
+                raise ValueError(
+                    f"Unsupported preferred_lift_method {preferred_lift_method}. "
+                    "Use auto, sindy_baseline, sindy_ttci_thwi, or edmd_ttci_thwi."
+                )
+
+            if selected_matrix_set is None:
+                raise FileNotFoundError(
+                    f"Could not find a matrix set matching preferred_lift_method={preferred_lift_method}."
+                )
+
+            state_dim, A_file, B_file, C_file = selected_matrix_set
             
             self.A = np.loadtxt(A_file, delimiter=',')
             self.B = np.loadtxt(B_file, delimiter=',')
@@ -597,9 +673,12 @@ class preceding_vehicle_spd_profile_generation():
             # Ensure proper shape for C (should be row vector)
             if self.C.ndim == 1:
                 self.C = self.C.reshape(1, -1)
+
+            self._infer_lift_configuration(self.A.shape[0])
             
             print(f"Matrices loaded successfully from {data_folder_path}")
             print(f"A shape: {self.A.shape}, B shape: {self.B.shape}, C shape: {self.C.shape}")
+            print(f"Using Koopman lift: {self.koopman_lift_method}")
             
             return self.A, self.B, self.C
         
@@ -612,9 +691,37 @@ class preceding_vehicle_spd_profile_generation():
             return None, None, None
 
         
-    def _koopman_lift_sindy(self, ds, dv, v_ego, a_ego):
-        """Lift original state to Koopman space using the updated SINDy basis from MATLAB counterpart."""
-        return np.array([ds, dv, ds**2, dv**2], dtype=float)
+    def _koopman_lift_sindy(self, ds, dv, v_ego):
+        ds_safe = max(float(ds), 1e-3)
+        ttci = float(dv) / ds_safe
+        thwi = float(v_ego) / ds_safe
+        if self.koopman_lift_method == "sindy_baseline":
+            return np.array([ds, dv, ds**2, dv**2], dtype=float)
+        if self.koopman_lift_method == "sindy_ttci_thwi":
+            return np.array([ds, dv, ds**2, dv**2, ttci, thwi], dtype=float)
+        raise ValueError(f"SINDy lift requested with unsupported mode {self.koopman_lift_method}.")
+
+    def _koopman_lift_edmd(self, ds, dv, v_ego):
+        if self.edmd_centers is None:
+            raise ValueError("EDMD centers are not initialized.")
+        ds_safe = max(float(ds), 1e-3)
+        ttci = float(dv) / ds_safe
+        thwi = float(v_ego) / ds_safe
+        z = []
+        for c_ds in self.edmd_centers["ds"]:
+            for c_dv in self.edmd_centers["dv"]:
+                for c_ttci in self.edmd_centers["ttci"]:
+                    for c_thwi in self.edmd_centers["thwi"]:
+                        delta = np.array([ds - c_ds, dv - c_dv, ttci - c_ttci, thwi - c_thwi], dtype=float)
+                        z.append(np.exp(-np.linalg.norm(delta) / (2 * self.edmd_sigma ** 2)))
+        return np.array(z, dtype=float)
+
+    def _build_koopman_lift(self, ds, dv, v_ego):
+        if self.koopman_lift_method in {"sindy_baseline", "sindy_ttci_thwi"}:
+            return self._koopman_lift_sindy(ds, dv, v_ego)
+        if self.koopman_lift_method == "edmd_ttci_thwi":
+            return self._koopman_lift_edmd(ds, dv, v_ego)
+        raise ValueError(f"Unsupported Koopman lift method {self.koopman_lift_method}.")
 
     def perform_nonlinear_optimization_for_reward_tracking(self, Q, R, reward_target, a_max=None, a_min=None, v_max=None, v_min=None, du_max=None, du_min=None, R_du=0.0):
         """Optimize PV motion to track a reward reference using lifted state-space model.
@@ -680,16 +787,13 @@ class preceding_vehicle_spd_profile_generation():
         ds = self.pv_s - self.ego_s[0]
         dv = self.pv_v - self.ego_v[0]
         v_ego = self.ego_v[0]
-        a_ego = self.ego_a[0]
-
-        lift_z = self._koopman_lift_sindy(ds, dv, v_ego, a_ego)
-        x0 = np.zeros(n)
-        x0[: min(n, lift_z.size)] = lift_z[: min(n, lift_z.size)]
-
-        # if n > lifted dimension, fill extra entries with current PV quantities
-        if n > lift_z.size:
-            extras = np.array([self.pv_s, self.pv_v, self.pv_a])
-            x0[lift_z.size: min(n, lift_z.size + extras.size)] = extras[: min(n - lift_z.size, extras.size)]
+        lift_z = self._build_koopman_lift(ds, dv, v_ego)
+        if lift_z.size != n:
+            raise ValueError(
+                f"Lifted state dimension {lift_z.size} does not match matrix dimension {n}. "
+                "Regenerate the Koopman matrices or update the Python lifting configuration."
+            )
+        x0 = lift_z
 
         casA = casadi.DM(self.A)
         casB = casadi.DM(self.B)
@@ -732,8 +836,8 @@ class preceding_vehicle_spd_profile_generation():
                 if du_min is not None:
                     opti.subject_to(u[0, i-1] - u[0, i-2] >= du_min)
 
-            # Add constraints on velocity (assuming x[1] is velocity if n >= 2)
-            if n >= 2:
+            # Only the SINDy lifts retain dv explicitly as x[1].
+            if self.koopman_lift_method in {"sindy_baseline", "sindy_ttci_thwi"} and n >= 2:
                 if v_max is not None:
                     opti.subject_to(x[1, i] <= v_max)
                 if v_min is not None:

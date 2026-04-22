@@ -5,6 +5,7 @@
     <arg name="use_preview" default="0"/>
     <arg name="sim_run" default="1"/>
     <arg name="site_map" default="custom_map_dir0.csv"/>
+    <arg name="koopman_lift_method" default="auto"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
@@ -13,6 +14,7 @@
     <param name="num_vehicles" value="1"/>
     <param name="pv_states_dt" value="0.5"/>
     <param name="use_preview" value="$(arg use_preview)"/>
+    <param name="koopman_lift_method" value="$(arg koopman_lift_method)"/>
     <param name="track_style" value="Rally"/>
     <node pkg="cra_traffic_sim" type="car_following_single_lane_behavior_generation.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
     <node pkg="joy" type="joy_node" name="joy_node" output="screen" />
