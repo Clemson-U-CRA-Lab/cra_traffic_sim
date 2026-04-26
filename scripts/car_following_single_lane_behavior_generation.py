@@ -12,7 +12,7 @@ from sim_env_manager import *
 from utils import *
 
 # Define constants
-RAD_TO_DEGREE = 52.296
+RAD_TO_DEGREE = 180.0 / np.pi
 DRIVING_CYCLE_MODE = "driving_cycle"
 BEHAVIOR_GENERATION_MODE = "behavior_generation"
 RETURN_TO_CYCLE_MODE = "return_to_cycle"
@@ -422,14 +422,14 @@ def main_single_lane_following():
                         front_acc_max=front_vehicle_acc_max,
                     )
 
+                    ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
+                        pitch_max=2 / RAD_TO_DEGREE,
+                        pitch_min=-2 / RAD_TO_DEGREE,
+                        acc_max=4.0,
+                        acc_min=-6.0,
+                    )
                     for i in range(num_Sv):
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i], lane_id=0)
-                        ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
-                            pitch_max=2 / RAD_TO_DEGREE,
-                            pitch_min=-2 / RAD_TO_DEGREE,
-                            acc_max=4.0,
-                            acc_min=-6.0,
-                        )
                         ego_vehicle_poses = [
                             traffic_manager.ego_x,
                             traffic_manager.ego_y,

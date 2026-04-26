@@ -88,6 +88,7 @@ class CMI_traffic_sim:
         self.ego_acc = 0.0
         self.ego_omega = 0.0
         self.ego_v = 0.0
+        self.ego_acceleration_pitch = 0.0
         self.ego_pose_ref = np.zeros((3, 1))
 
         self.traffic_initialized = False
@@ -216,12 +217,19 @@ class CMI_traffic_sim:
         # self.ego_lv = lv
         self.ego_yaw_s = yaw_s
     
-    def ego_acceleration_pitch_update(self, pitch_max, pitch_min, acc_max, acc_min):
-        if (self.ego_acc >= 0):
-            acc_incited_pitch = pitch_max * (self.ego_acc / acc_max)
+    def ego_acceleration_pitch_update(self, pitch_max, pitch_min, acc_max, acc_min, smoothing_factor=0.1):
+        ego_acc = float(np.clip(self.ego_acc, acc_min, acc_max))
+        if (ego_acc >= 0):
+            acc_incited_pitch = pitch_max * (ego_acc / acc_max)
         else:
-            acc_incited_pitch = pitch_min * (self.ego_acc / acc_min)
-        return acc_incited_pitch
+            acc_incited_pitch = pitch_min * (ego_acc / acc_min)
+        acc_incited_pitch = float(np.clip(acc_incited_pitch, pitch_min, pitch_max))
+        smoothing_factor = float(np.clip(smoothing_factor, 0.0, 1.0))
+        self.ego_acceleration_pitch = (
+            smoothing_factor * acc_incited_pitch
+            + (1.0 - smoothing_factor) * self.ego_acceleration_pitch
+        )
+        return self.ego_acceleration_pitch
     
     def construct_vehicle_state_sequence_msg(self, id, t, s, v, a, sim_start):
         self.vehicle_traj_seq_msg = vehicle_traj_seq()
