@@ -6,6 +6,10 @@
     <arg name="sim_run" default="1"/>
     <arg name="site_map" default="custom_map_dir0.csv"/>
     <arg name="koopman_lift_method" default="auto"/>
+    <arg name="front_vehicle_travel_distance" default="500.0"/>
+    <arg name="front_vehicle_stop_distance_tolerance" default="0.5"/>
+    <arg name="front_vehicle_stop_speed_tolerance" default="0.1"/>
+    <arg name="front_vehicle_stop_buffer" default="2.0"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
@@ -15,6 +19,10 @@
     <param name="pv_states_dt" value="0.5"/>
     <param name="use_preview" value="$(arg use_preview)"/>
     <param name="koopman_lift_method" value="$(arg koopman_lift_method)"/>
+    <param name="front_vehicle_travel_distance" value="$(arg front_vehicle_travel_distance)"/>
+    <param name="front_vehicle_stop_distance_tolerance" value="$(arg front_vehicle_stop_distance_tolerance)"/>
+    <param name="front_vehicle_stop_speed_tolerance" value="$(arg front_vehicle_stop_speed_tolerance)"/>
+    <param name="front_vehicle_stop_buffer" value="$(arg front_vehicle_stop_buffer)"/>
     <param name="track_style" value="Rally"/>
     <node pkg="cra_traffic_sim" type="car_following_single_lane_behavior_generation.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
     <node pkg="joy" type="joy_node" name="joy_node" output="screen" />

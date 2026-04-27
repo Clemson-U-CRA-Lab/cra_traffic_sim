@@ -16,6 +16,8 @@ RAD_TO_DEGREE = 180.0 / np.pi
 DRIVING_CYCLE_MODE = "driving_cycle"
 BEHAVIOR_GENERATION_MODE = "behavior_generation"
 RETURN_TO_CYCLE_MODE = "return_to_cycle"
+STOP_AT_DISTANCE_MODE = "stop_at_distance"
+HOLD_STOPPED_MODE = "hold_stopped"
 
 
 def road_reference_correction_msg_prep(ego_pitch):
@@ -67,6 +69,94 @@ def compute_return_to_cycle_acceleration(front_s, front_v, cycle_ref, front_vehi
     return float(np.clip(commanded_acc, acc_min, acc_max))
 
 
+def should_begin_stop_at_distance(front_s, front_v, target_stop_s, acc_min, stop_buffer):
+    if target_stop_s is None:
+        return False
+
+    remaining_distance = target_stop_s - front_s
+    if remaining_distance <= 0.0:
+        return True
+
+    max_deceleration = max(abs(acc_min), 1e-3)
+    stopping_distance = front_v ** 2 / (2.0 * max_deceleration)
+    return remaining_distance <= stopping_distance + stop_buffer
+
+
+def compute_stop_at_distance_acceleration(
+    front_s,
+    front_v,
+    target_stop_s,
+    acc_min,
+    acc_max,
+    distance_tolerance,
+    speed_tolerance,
+):
+    remaining_distance = target_stop_s - front_s
+    if remaining_distance <= distance_tolerance:
+        if front_v > speed_tolerance:
+            return float(acc_min)
+        return 0.0
+
+    if front_v <= speed_tolerance:
+        max_deceleration = max(abs(acc_min), 1e-3)
+        approach_speed = min(2.0, np.sqrt(2.0 * max_deceleration * remaining_distance))
+        commanded_acc = 0.5 * (approach_speed - front_v)
+        return float(np.clip(commanded_acc, 0.0, acc_max))
+
+    required_acc = -(front_v ** 2) / (2.0 * remaining_distance)
+    return float(np.clip(required_acc, acc_min, min(0.0, acc_max)))
+
+
+def clamp_to_stop_target(front_s, front_v, front_a, target_stop_s, distance_tolerance, speed_tolerance):
+    if target_stop_s is None:
+        return front_s, front_v, front_a, False
+
+    remaining_distance = target_stop_s - front_s
+    if front_s >= target_stop_s or (remaining_distance <= distance_tolerance and front_v <= speed_tolerance):
+        return float(target_stop_s), 0.0, 0.0, True
+
+    return front_s, front_v, front_a, False
+
+
+def update_front_vehicle_stop_at_distance(
+    front_s,
+    front_v,
+    dt,
+    target_stop_s,
+    speed_limit,
+    acc_min,
+    acc_max,
+    distance_tolerance,
+    speed_tolerance,
+):
+    commanded_acc = compute_stop_at_distance_acceleration(
+        front_s,
+        front_v,
+        target_stop_s,
+        acc_min,
+        acc_max,
+        distance_tolerance,
+        speed_tolerance,
+    )
+    next_s, next_v, next_a = clamp_vehicle_state(
+        front_s,
+        front_v,
+        commanded_acc,
+        dt,
+        speed_limit,
+        acc_min,
+        acc_max,
+    )
+    return clamp_to_stop_target(
+        next_s,
+        next_v,
+        next_a,
+        target_stop_s,
+        distance_tolerance,
+        speed_tolerance,
+    )
+
+
 def build_linear_reward_target_window(current_time, horizon_length, time_interval, target_max, ramp_duration):
     if ramp_duration <= 0.0:
         raise ValueError("ramp_duration must be positive.")
@@ -91,6 +181,9 @@ def build_front_preview(
     driving_cycle_distance_offset,
     front_acc_min,
     front_acc_max,
+    target_stop_s=None,
+    stop_distance_tolerance=0.05,
+    stop_speed_tolerance=0.1,
 ):
     front_s_t = [0.0] * 40
     front_v_t = [0.0] * 40
@@ -102,7 +195,13 @@ def build_front_preview(
     for i in range(1, 20):
         if mode == DRIVING_CYCLE_MODE and use_preview:
             v_t, s_t, a_t = traffic_map_manager.find_front_vehicle_predicted_state(dt=i * pv_dt, sim_t=sim_t)
-            front_s_t[i] = round(s_t + ego_s_init + init_gap + driving_cycle_distance_offset, 3)
+            predicted_s = s_t + ego_s_init + init_gap + driving_cycle_distance_offset
+            if target_stop_s is not None and predicted_s >= target_stop_s:
+                front_s_t[i] = round(target_stop_s, 3)
+                front_v_t[i] = 0.0
+                front_a_t[i] = 0.0
+                continue
+            front_s_t[i] = round(predicted_s, 3)
             front_v_t[i] = round(v_t, 3)
             front_a_t[i] = round(a_t, 3)
             continue
@@ -121,6 +220,16 @@ def build_front_preview(
                 front_acc_min,
                 front_acc_max,
             )
+        elif mode == STOP_AT_DISTANCE_MODE and target_stop_s is not None:
+            preview_a = compute_stop_at_distance_acceleration(
+                prev_s,
+                prev_v,
+                target_stop_s,
+                front_acc_min,
+                front_acc_max,
+                stop_distance_tolerance,
+                stop_speed_tolerance,
+            )
         else:
             preview_a = front_a_t[i - 1]
 
@@ -133,6 +242,15 @@ def build_front_preview(
             front_acc_min,
             front_acc_max,
         )
+        if mode in {STOP_AT_DISTANCE_MODE, HOLD_STOPPED_MODE}:
+            next_s, next_v, next_a, _ = clamp_to_stop_target(
+                next_s,
+                next_v,
+                next_a,
+                target_stop_s,
+                stop_distance_tolerance,
+                stop_speed_tolerance,
+            )
         front_s_t[i] = round(next_s, 3)
         front_v_t[i] = round(next_v, 3)
         front_a_t[i] = round(next_a, 3)
@@ -160,6 +278,16 @@ def main_single_lane_following():
     use_preview = bool(rospy.get_param("/use_preview"))
     run_direction = rospy.get_param("/runDirection")
     koopman_lift_method = rospy.get_param("/koopman_lift_method", "auto")
+    front_vehicle_travel_distance = float(rospy.get_param("/front_vehicle_travel_distance", 250.0))
+    front_vehicle_stop_distance_tolerance = max(
+        float(rospy.get_param("/front_vehicle_stop_distance_tolerance", 0.05)),
+        0.0,
+    )
+    front_vehicle_stop_speed_tolerance = max(
+        float(rospy.get_param("/front_vehicle_stop_speed_tolerance", 0.1)),
+        0.0,
+    )
+    front_vehicle_stop_buffer = max(float(rospy.get_param("/front_vehicle_stop_buffer", 2.0)), 0.0)
 
     map_1_file = os.path.join(parent_dir, "maps", map_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
@@ -238,6 +366,8 @@ def main_single_lane_following():
 
     scenario_mode = DRIVING_CYCLE_MODE
     behavior_generation_start_time = None
+    front_vehicle_stop_target_s = None
+    front_vehicle_stop_target_logged = False
 
     while not rospy.is_shutdown():
         try:
@@ -282,17 +412,47 @@ def main_single_lane_following():
                     vehicle_id_in_lane=0,
                 )
                 ego_s_init = s_ego_frenet
+                if front_vehicle_travel_distance > 0.0:
+                    front_vehicle_stop_target_s = traffic_manager.traffic_s[0] + front_vehicle_travel_distance
                 continue
             else:
                 msg_counter += 1
                 if traffic_manager.sim_start:
                     sim_t += Dt
                     cycle_ref = get_cycle_reference(traffic_map_manager, sim_t, ego_s_init, init_gap)
+                    if front_vehicle_stop_target_s is not None and not front_vehicle_stop_target_logged:
+                        rospy.loginfo(
+                            "Front vehicle stop target set to %.3f m Frenet s (%.3f m travel distance).",
+                            front_vehicle_stop_target_s,
+                            front_vehicle_travel_distance,
+                        )
+                        front_vehicle_stop_target_logged = True
 
                     if scenario_mode == DRIVING_CYCLE_MODE and traffic_manager.consume_behavior_generation_request():
                         scenario_mode = BEHAVIOR_GENERATION_MODE
                         behavior_generation_start_time = sim_t
                         rospy.loginfo("Front vehicle switched to behavior generation mode.")
+
+                    if front_vehicle_stop_target_s is not None and scenario_mode not in {
+                        STOP_AT_DISTANCE_MODE,
+                        HOLD_STOPPED_MODE,
+                    }:
+                        cycle_s_with_offset = cycle_ref["world_s"] + driving_cycle_distance_offset
+                        cycle_would_pass_target = (
+                            scenario_mode == DRIVING_CYCLE_MODE
+                            and cycle_s_with_offset >= front_vehicle_stop_target_s
+                        )
+                        should_stop_now = should_begin_stop_at_distance(
+                            traffic_manager.traffic_s[0],
+                            traffic_manager.traffic_v[0],
+                            front_vehicle_stop_target_s,
+                            front_vehicle_acc_min,
+                            front_vehicle_stop_buffer,
+                        )
+                        if cycle_would_pass_target or should_stop_now:
+                            scenario_mode = STOP_AT_DISTANCE_MODE
+                            behavior_generation_start_time = None
+                            rospy.loginfo("Front vehicle switched to stop-at-distance mode.")
 
                     if scenario_mode == DRIVING_CYCLE_MODE:
                         apply_cycle_reference_with_offset(
@@ -339,34 +499,79 @@ def main_single_lane_following():
                             front_a = float(np.clip(traffic_manager.traffic_alon[0], front_vehicle_acc_min, front_vehicle_acc_max))
                             commanded_acc = front_a + 0.2 * (front_a_target - front_a)
                             commanded_acc = float(np.clip(commanded_acc, front_vehicle_acc_min, front_vehicle_acc_max))
+                            use_behavior_update = True
                         elif behavior_elapsed < behavior_generation_duration:
                             commanded_acc = 0.0
+                            use_behavior_update = True
                         else:
-                            scenario_mode = RETURN_TO_CYCLE_MODE
-                            commanded_acc = compute_return_to_cycle_acceleration(
+                            use_behavior_update = front_vehicle_stop_target_s is None
+                            behavior_generation_start_time = None
+                            if front_vehicle_stop_target_s is None:
+                                scenario_mode = RETURN_TO_CYCLE_MODE
+                                commanded_acc = compute_return_to_cycle_acceleration(
+                                    traffic_manager.traffic_s[0],
+                                    traffic_manager.traffic_v[0],
+                                    cycle_ref,
+                                    front_vehicle_speed_limit,
+                                    Dt,
+                                    front_vehicle_acc_min,
+                                    front_vehicle_acc_max,
+                                )
+                                rospy.loginfo("Front vehicle switched to return-to-cycle mode.")
+                            else:
+                                scenario_mode = STOP_AT_DISTANCE_MODE
+                                rospy.loginfo("Front vehicle switched to stop-at-distance mode.")
+
+                        if use_behavior_update:
+                            next_s, next_v, next_a = clamp_vehicle_state(
                                 traffic_manager.traffic_s[0],
                                 traffic_manager.traffic_v[0],
-                                cycle_ref,
-                                front_vehicle_speed_limit,
+                                commanded_acc,
                                 Dt,
+                                front_vehicle_speed_limit,
                                 front_vehicle_acc_min,
                                 front_vehicle_acc_max,
                             )
-                            rospy.loginfo("Front vehicle switched to return-to-cycle mode.")
-
-                        next_s, next_v, next_a = clamp_vehicle_state(
+                            stopped_at_target = False
+                            if front_vehicle_stop_target_s is not None:
+                                next_s, next_v, next_a, stopped_at_target = clamp_to_stop_target(
+                                    next_s,
+                                    next_v,
+                                    next_a,
+                                    front_vehicle_stop_target_s,
+                                    front_vehicle_stop_distance_tolerance,
+                                    front_vehicle_stop_speed_tolerance,
+                                )
+                            traffic_manager.traffic_s[0] = next_s
+                            traffic_manager.traffic_v[0] = next_v
+                            traffic_manager.traffic_alon[0] = next_a
+                            if stopped_at_target:
+                                scenario_mode = HOLD_STOPPED_MODE
+                                behavior_generation_start_time = None
+                                rospy.loginfo("Front vehicle reached stop target and is holding.")
+                    elif scenario_mode == STOP_AT_DISTANCE_MODE:
+                        next_s, next_v, next_a, stopped_at_target = update_front_vehicle_stop_at_distance(
                             traffic_manager.traffic_s[0],
                             traffic_manager.traffic_v[0],
-                            commanded_acc,
                             Dt,
+                            front_vehicle_stop_target_s,
                             front_vehicle_speed_limit,
                             front_vehicle_acc_min,
                             front_vehicle_acc_max,
+                            front_vehicle_stop_distance_tolerance,
+                            front_vehicle_stop_speed_tolerance,
                         )
                         traffic_manager.traffic_s[0] = next_s
                         traffic_manager.traffic_v[0] = next_v
                         traffic_manager.traffic_alon[0] = next_a
-                    else:
+                        if stopped_at_target:
+                            scenario_mode = HOLD_STOPPED_MODE
+                            rospy.loginfo("Front vehicle reached stop target and is holding.")
+                    elif scenario_mode == HOLD_STOPPED_MODE:
+                        traffic_manager.traffic_s[0] = front_vehicle_stop_target_s
+                        traffic_manager.traffic_v[0] = 0.0
+                        traffic_manager.traffic_alon[0] = 0.0
+                    elif scenario_mode == RETURN_TO_CYCLE_MODE:
                         commanded_acc = compute_return_to_cycle_acceleration(
                             traffic_manager.traffic_s[0],
                             traffic_manager.traffic_v[0],
@@ -420,6 +625,9 @@ def main_single_lane_following():
                         driving_cycle_distance_offset=driving_cycle_distance_offset,
                         front_acc_min=front_vehicle_acc_min,
                         front_acc_max=front_vehicle_acc_max,
+                        target_stop_s=front_vehicle_stop_target_s,
+                        stop_distance_tolerance=front_vehicle_stop_distance_tolerance,
+                        stop_speed_tolerance=front_vehicle_stop_speed_tolerance,
                     )
 
                     ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
