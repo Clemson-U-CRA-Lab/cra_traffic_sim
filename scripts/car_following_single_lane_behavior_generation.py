@@ -278,7 +278,7 @@ def main_single_lane_following():
     use_preview = bool(rospy.get_param("/use_preview"))
     run_direction = rospy.get_param("/runDirection")
     koopman_lift_method = rospy.get_param("/koopman_lift_method", "auto")
-    front_vehicle_travel_distance = float(rospy.get_param("/front_vehicle_travel_distance", 250.0))
+    front_vehicle_travel_distance = float(rospy.get_param("/front_vehicle_travel_distance"))
     front_vehicle_stop_distance_tolerance = max(
         float(rospy.get_param("/front_vehicle_stop_distance_tolerance", 0.05)),
         0.0,
@@ -358,7 +358,7 @@ def main_single_lane_following():
     reward_R_du = 100.0
     maintain_motion_duration = 5.0
     behavior_generation_duration = reward_tracking_duration + maintain_motion_duration
-    front_vehicle_speed_limit = 20.0
+    front_vehicle_speed_limit = 22.5
     front_vehicle_acc_max = 4.0
     front_vehicle_acc_min = -4.0
     return_speed_tolerance = 0.3
@@ -504,9 +504,22 @@ def main_single_lane_following():
                             commanded_acc = 0.0
                             use_behavior_update = True
                         else:
-                            use_behavior_update = front_vehicle_stop_target_s is None
                             behavior_generation_start_time = None
-                            if front_vehicle_stop_target_s is None:
+                            if (
+                                front_vehicle_stop_target_s is not None
+                                and should_begin_stop_at_distance(
+                                    traffic_manager.traffic_s[0],
+                                    traffic_manager.traffic_v[0],
+                                    front_vehicle_stop_target_s,
+                                    front_vehicle_acc_min,
+                                    front_vehicle_stop_buffer,
+                                )
+                            ):
+                                use_behavior_update = False
+                                scenario_mode = STOP_AT_DISTANCE_MODE
+                                rospy.loginfo("Front vehicle switched to stop-at-distance mode.")
+                            else:
+                                use_behavior_update = True
                                 scenario_mode = RETURN_TO_CYCLE_MODE
                                 commanded_acc = compute_return_to_cycle_acceleration(
                                     traffic_manager.traffic_s[0],
@@ -518,9 +531,6 @@ def main_single_lane_following():
                                     front_vehicle_acc_max,
                                 )
                                 rospy.loginfo("Front vehicle switched to return-to-cycle mode.")
-                            else:
-                                scenario_mode = STOP_AT_DISTANCE_MODE
-                                rospy.loginfo("Front vehicle switched to stop-at-distance mode.")
 
                         if use_behavior_update:
                             next_s, next_v, next_a = clamp_vehicle_state(
