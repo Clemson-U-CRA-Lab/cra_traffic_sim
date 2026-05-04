@@ -258,7 +258,43 @@ def build_front_preview(
     return front_s_t, front_v_t, front_a_t
 
 
-def main_single_lane_following():
+def compute_safe_idm_acceleration(idm_control, traffic_manager, follower_id, leader_id):
+    leader_s = traffic_manager.traffic_s[leader_id]
+    follower_s = traffic_manager.traffic_s[follower_id]
+    if leader_s - follower_s <= idm_control.s0 + 1e-3:
+        return -4.0
+
+    return idm_control.IDM_acceleration(
+        front_v=traffic_manager.traffic_v[leader_id],
+        ego_v=traffic_manager.traffic_v[follower_id],
+        front_s=leader_s,
+        ego_s=follower_s,
+    )
+
+
+def update_side_lane_idm_followers(traffic_manager, idm_control, dt, num_vehicles):
+    for vehicle_id in range(1, num_vehicles):
+        leader_id = vehicle_id - 1
+        acc_t = compute_safe_idm_acceleration(
+            idm_control=idm_control,
+            traffic_manager=traffic_manager,
+            follower_id=vehicle_id,
+            leader_id=leader_id,
+        )
+        if traffic_manager.traffic_v[vehicle_id] <= 0.0 and acc_t < 0.0:
+            acc_t = 0.0
+        traffic_manager.traffic_update_from_acceleration(dt=dt, a=acc_t, vehicle_id=vehicle_id)
+
+
+def initialize_side_lane_followers(traffic_manager, front_vehicle_s, leader_gap, follower_gap, num_vehicles):
+    for vehicle_id in range(1, num_vehicles):
+        traffic_manager.traffic_s[vehicle_id] = front_vehicle_s - leader_gap - follower_gap * (vehicle_id - 1)
+        traffic_manager.traffic_Sv_id[vehicle_id] = vehicle_id
+        traffic_manager.traffic_l[vehicle_id] = 1
+        traffic_manager.traffic_brake_status[vehicle_id] = True
+
+
+def main_double_lane_behavior_generation():
     # Path Parameters
     current_dirname = os.path.dirname(__file__)
     parent_dir = os.path.abspath(os.path.join(current_dirname, os.pardir))
@@ -278,6 +314,7 @@ def main_single_lane_following():
     use_preview = bool(rospy.get_param("/use_preview"))
     run_direction = rospy.get_param("/runDirection")
     koopman_lift_method = rospy.get_param("/koopman_lift_method", "auto")
+    side_lane_leader_initial_gap = max(float(rospy.get_param("/side_lane_leader_initial_gap", 8.0)), 0.0)
     front_vehicle_travel_distance = float(rospy.get_param("/front_vehicle_travel_distance"))
     front_vehicle_stop_distance_tolerance = max(
         float(rospy.get_param("/front_vehicle_stop_distance_tolerance", 0.05)),
@@ -303,7 +340,7 @@ def main_single_lane_following():
     )
 
     virtual_traffic_sim_info_manager = hololens_message_manager(
-        num_vehicles=1,
+        num_vehicles=num_Sv,
         max_num_vehicles=200,
         max_num_traffic_lights=12,
         num_traffic_lights=0,
@@ -314,6 +351,7 @@ def main_single_lane_following():
         speed_profile_filename=spd_file,
         closed_track=closed_loop,
     )
+    idm_control = IDM(a=4, b=5, s0=5, v0=30, T=1.0)
 
     front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(
         horizon_length=8,
@@ -410,6 +448,13 @@ def main_single_lane_following():
                     line_number=0,
                     vehicle_id=0,
                     vehicle_id_in_lane=0,
+                )
+                initialize_side_lane_followers(
+                    traffic_manager=traffic_manager,
+                    front_vehicle_s=traffic_manager.traffic_s[0],
+                    leader_gap=side_lane_leader_initial_gap,
+                    follower_gap=init_gap,
+                    num_vehicles=num_Sv,
                 )
                 ego_s_init = s_ego_frenet
                 if front_vehicle_travel_distance > 0.0:
@@ -640,35 +685,45 @@ def main_single_lane_following():
                         stop_speed_tolerance=front_vehicle_stop_speed_tolerance,
                     )
 
+                    update_side_lane_idm_followers(
+                        traffic_manager=traffic_manager,
+                        idm_control=idm_control,
+                        dt=Dt,
+                        num_vehicles=num_Sv,
+                    )
+
                     ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
                         pitch_max=2 / RAD_TO_DEGREE,
                         pitch_min=-2 / RAD_TO_DEGREE,
                         acc_max=4.0,
                         acc_min=-6.0,
                     )
+                    ego_vehicle_poses = [
+                        traffic_manager.ego_x,
+                        traffic_manager.ego_y,
+                        ego_vehicle_ref_poses[2],
+                        traffic_manager.ego_yaw,
+                        ego_vehicle_ref_poses[4],
+                    ]
+                    _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(
+                        ego_poses=traffic_manager.ego_pose_ref,
+                        ego_yaw=ego_vehicle_poses[3],
+                        vy=traffic_manager.ego_v_north,
+                        vx=traffic_manager.ego_v_east,
+                    )
+                    traffic_manager.ego_vehicle_frenet_update(
+                        s=s_ego_frenet,
+                        l=0,
+                        sv=v_longitudinal,
+                        lv=v_lateral,
+                        yaw_s=yaw_s,
+                    )
+
                     for i in range(num_Sv):
-                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(traffic_manager.traffic_s[i], lane_id=0)
-                        ego_vehicle_poses = [
-                            traffic_manager.ego_x,
-                            traffic_manager.ego_y,
-                            ego_vehicle_ref_poses[2],
-                            traffic_manager.ego_yaw,
-                            ego_vehicle_ref_poses[4],
-                        ]
-
-                        _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(
-                            ego_poses=traffic_manager.ego_pose_ref,
-                            ego_yaw=ego_vehicle_poses[3],
-                            vy=traffic_manager.ego_v_north,
-                            vx=traffic_manager.ego_v_east,
-                        )
-
-                        traffic_manager.ego_vehicle_frenet_update(
-                            s=s_ego_frenet,
-                            l=0,
-                            sv=v_longitudinal,
-                            lv=v_lateral,
-                            yaw_s=yaw_s,
+                        lane_id = 0 if i == 0 else 1
+                        traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(
+                            traffic_manager.traffic_s[i],
+                            lane_id=lane_id,
                         )
 
                         local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(
@@ -693,9 +748,10 @@ def main_single_lane_following():
                         )
                 else:
                     for i in range(num_Sv):
+                        lane_id = 0 if i == 0 else 1
                         traffic_vehicle_poses = traffic_map_manager.find_traffic_vehicle_poses(
                             traffic_manager.traffic_s[i] - s_ego_frenet,
-                            lane_id=0,
+                            lane_id=lane_id,
                         )
                         ego_vehicle_poses = [
                             traffic_manager.ego_x,
@@ -752,4 +808,4 @@ def main_single_lane_following():
 
 
 if __name__ == "__main__":
-    main_single_lane_following()
+    main_double_lane_behavior_generation()

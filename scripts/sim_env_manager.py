@@ -288,6 +288,11 @@ class road_reader:
         self.speed_profile_file = speed_profile_filename
         self.grand_prix_style = closed_track
         self.lane_width = 4.2
+        self._map_arrays_ready = False
+        self._speed_profile_arrays_ready = False
+        self._last_ego_ref_index = None
+        self._last_ego_frenet_index = None
+        self._ego_search_window = 2000
 
     def read_map_data(self):
         with open(self.cmi_road_file) as csv_file:
@@ -304,6 +309,7 @@ class road_reader:
                 self.pitch.append(line_data[4])
                 self.s.append(line_data[5])
                 line_data = []
+        self._refresh_map_arrays()
 
     def read_speed_profile(self):
         with open(self.speed_profile_file) as csv_file:
@@ -318,86 +324,162 @@ class road_reader:
                 self.acc.append(line_data[2])
                 self.dist.append(line_data[3])
                 line_data = []
+        self._refresh_speed_profile_arrays()
+
+    def _refresh_map_arrays(self):
+        self.x_arr = np.asarray(self.x, dtype=float)
+        self.y_arr = np.asarray(self.y, dtype=float)
+        self.z_arr = np.asarray(self.z, dtype=float)
+        self.yaw_arr = np.asarray(self.yaw, dtype=float)
+        self.pitch_arr = np.asarray(self.pitch, dtype=float)
+        self.s_arr = np.asarray(self.s, dtype=float)
+        self.xyz_arr = np.vstack((self.x_arr, self.y_arr, self.z_arr))
+        self._map_arrays_ready = True
+
+    def _refresh_speed_profile_arrays(self):
+        self.t_arr = np.asarray(self.t, dtype=float)
+        self.speed_arr = np.asarray(self.speed, dtype=float)
+        self.dist_arr = np.asarray(self.dist, dtype=float)
+        self.acc_arr = np.asarray(self.acc, dtype=float)
+        self._speed_profile_arrays_ready = True
+
+    def _nearest_time_index(self, query_time):
+        if not self._speed_profile_arrays_ready:
+            self._refresh_speed_profile_arrays()
+        idx_next = int(np.searchsorted(self.t_arr, query_time, side="left"))
+        if idx_next <= 0:
+            return 0
+        if idx_next >= len(self.t_arr):
+            return len(self.t_arr) - 1
+        idx_prev = idx_next - 1
+        if abs(self.t_arr[idx_next] - query_time) < abs(query_time - self.t_arr[idx_prev]):
+            return idx_next
+        return idx_prev
+
+    def _nearest_map_index(self, ego_poses, cache_attr):
+        if not self._map_arrays_ready:
+            self._refresh_map_arrays()
+
+        ego_xyz = np.asarray(ego_poses, dtype=float).reshape(3, 1)
+        num_points = len(self.s_arr)
+        cached_index = getattr(self, cache_attr)
+        if cached_index is None:
+            start = 0
+            end = num_points
+        else:
+            start = max(0, int(cached_index) - self._ego_search_window)
+            end = min(num_points, int(cached_index) + self._ego_search_window + 1)
+
+        local_delta = self.xyz_arr[:, start:end] - ego_xyz
+        local_dist_sq = np.sum(local_delta * local_delta, axis=0)
+        local_index = int(np.argmin(local_dist_sq))
+        nearest_index = start + local_index
+
+        if (
+            cached_index is not None
+            and ((local_index == 0 and start > 0) or (local_index == end - start - 1 and end < num_points))
+        ):
+            full_delta = self.xyz_arr - ego_xyz
+            full_dist_sq = np.sum(full_delta * full_delta, axis=0)
+            nearest_index = int(np.argmin(full_dist_sq))
+            min_dist_sq = float(full_dist_sq[nearest_index])
+        else:
+            min_dist_sq = float(local_dist_sq[local_index])
+
+        setattr(self, cache_attr, nearest_index)
+        return nearest_index, min_dist_sq ** 0.5
 
     def find_traffic_vehicle_poses(self, dist_travelled, lane_id):
-        dist_map = np.array(self.s)
-        id_virtual = np.argmin(np.abs(dist_travelled - dist_map))
-        ds = dist_travelled - self.s[id_virtual]
+        if not self._map_arrays_ready:
+            self._refresh_map_arrays()
 
-        if (ds > 0):
-            id_adjacent = (id_virtual + 1) % len(self.s)
+        if self.grand_prix_style:
+            id_virtual = int(np.argmin(np.abs(dist_travelled - self.s_arr)))
+            ds = dist_travelled - self.s_arr[id_virtual]
+            if (ds > 0):
+                id_adjacent = (id_virtual + 1) % len(self.s_arr)
+            else:
+                id_adjacent = (id_virtual - 1) % len(self.s_arr)
+            dist_between_map_poses = ((self.x_arr[id_adjacent] - self.x_arr[id_virtual])**2 +
+                                      (self.y_arr[id_adjacent] - self.y_arr[id_virtual])**2 +
+                                      (self.z_arr[id_adjacent] - self.z_arr[id_virtual])**2)**0.5
+            k = np.abs(ds / dist_between_map_poses)
         else:
-            id_adjacent = (id_virtual - 1) % len(self.s)
+            id_adjacent = int(np.searchsorted(self.s_arr, dist_travelled, side="left"))
+            if id_adjacent <= 0:
+                id_virtual = 0
+                id_adjacent = 1
+            elif id_adjacent >= len(self.s_arr):
+                id_virtual = len(self.s_arr) - 1
+                id_adjacent = len(self.s_arr) - 2
+            else:
+                id_virtual = id_adjacent - 1
+            k = (dist_travelled - self.s_arr[id_virtual]) / (self.s_arr[id_adjacent] - self.s_arr[id_virtual])
 
-        dist_between_map_poses = ((self.x[id_adjacent] - self.x[id_virtual])**2 +
-                                  (self.y[id_adjacent] - self.y[id_virtual])**2 +
-                                  (self.z[id_adjacent] - self.z[id_virtual])**2)**0.5
-
-        k = np.abs(ds / dist_between_map_poses)
-
-        traffic_x = self.x[id_virtual] * (1 - k) + self.x[id_adjacent] * k
-        traffic_y = (self.y[id_virtual] + lane_id * self.lane_width) * (1 - k) + (self.y[id_virtual] + lane_id * self.lane_width) * k
-        traffic_z = self.z[id_virtual] * (1 - k) + self.z[id_adjacent] * k
-        traffic_yaw = self.yaw[id_virtual]
-        traffic_pitch = self.pitch[id_virtual]
+        traffic_x = self.x_arr[id_virtual] * (1 - k) + self.x_arr[id_adjacent] * k
+        traffic_y = (self.y_arr[id_virtual] + lane_id * self.lane_width) * (1 - k) + (self.y_arr[id_adjacent] + lane_id * self.lane_width) * k
+        traffic_z = self.z_arr[id_virtual] * (1 - k) + self.z_arr[id_adjacent] * k
+        traffic_yaw = self.yaw_arr[id_virtual]
+        traffic_pitch = self.pitch_arr[id_virtual]
 
         return [traffic_x, traffic_y, traffic_z, traffic_yaw, traffic_pitch]
 
     def find_ego_vehicle_distance_reference(self, ego_poses):
-        traj_coordinate = np.array([self.x, self.y, self.z])
-        dist_to_map = np.linalg.norm(traj_coordinate - ego_poses, axis=0)
-        min_ref_coordinate_id = np.argmin(dist_to_map)
-        min_dist_to_map = np.min(dist_to_map)
-        s_max = np.max(self.s)
+        min_ref_coordinate_id, min_dist_to_map = self._nearest_map_index(
+            ego_poses,
+            "_last_ego_ref_index",
+        )
+        s_max = np.max(self.s_arr)
 
         if (self.grand_prix_style):
-            next_id = (min_ref_coordinate_id + 1) % len(self.s)
+            next_id = (min_ref_coordinate_id + 1) % len(self.s_arr)
             prev_id = (min_ref_coordinate_id - 1)
         else:
-            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s) - 1)
-            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s) - 1)
+            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s_arr) - 1)
+            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s_arr) - 1)
 
-        x_next = self.x[next_id]
-        y_next = self.y[next_id]
-        z_next = self.z[next_id]
+        x_next = self.x_arr[next_id]
+        y_next = self.y_arr[next_id]
+        z_next = self.z_arr[next_id]
 
-        x_prev = self.x[prev_id]
-        y_prev = self.y[prev_id]
-        z_prev = self.z[prev_id]
+        x_prev = self.x_arr[prev_id]
+        y_prev = self.y_arr[prev_id]
+        z_prev = self.z_arr[prev_id]
 
         dist_to_next = ((ego_poses[0] - x_next)**2 + (ego_poses[1] - y_next)**2 + (ego_poses[2] - z_next)**2)**0.5
         dist_to_prev = ((ego_poses[0] - x_prev)**2 + (ego_poses[1] - y_prev)**2 + (ego_poses[2] - z_prev)**2)**0.5
 
         w = dist_to_next / (dist_to_next + dist_to_prev)
-        s_ref = w * self.s[next_id] + (1 - w) * self.s[prev_id]
+        s_ref = w * self.s_arr[next_id] + (1 - w) * self.s_arr[prev_id]
         return s_ref[0], min_dist_to_map, s_max
 
     def find_ego_frenet_pose(self, ego_poses, ego_yaw, vy, vx):
         # Find closest point from map to the ego vehicle
-        cmi_traj_coordinate = np.array([self.x, self.y, self.z])
-        dist_to_map = np.linalg.norm(cmi_traj_coordinate - ego_poses, axis=0)
-        min_ref_coordinate_id = np.argmin(dist_to_map)
+        min_ref_coordinate_id, _ = self._nearest_map_index(
+            ego_poses,
+            "_last_ego_frenet_index",
+        )
 
         if (self.grand_prix_style):
-            next_id = (min_ref_coordinate_id + 1) % len(self.s)
+            next_id = (min_ref_coordinate_id + 1) % len(self.s_arr)
             prev_id = (min_ref_coordinate_id - 1)
         else:
-            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s) - 1)
-            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s) - 1)
+            next_id = np.clip(min_ref_coordinate_id + 1, 0, len(self.s_arr) - 1)
+            prev_id = np.clip(min_ref_coordinate_id - 1, 0, len(self.s_arr) - 1)
 
         x_t = ego_poses[0][0]
         y_t = ego_poses[1][0]
         yaw_t = ego_yaw
 
-        x_next = self.x[next_id]
-        y_next = self.y[next_id]
+        x_next = self.x_arr[next_id]
+        y_next = self.y_arr[next_id]
         # z_next = self.z[next_id]
-        yaw_next = self.yaw[next_id]
+        yaw_next = self.yaw_arr[next_id]
 
-        x_prev = self.x[prev_id]
-        y_prev = self.y[prev_id]
+        x_prev = self.x_arr[prev_id]
+        y_prev = self.y_arr[prev_id]
         # z_prev = self.z[prev_id]
-        yaw_prev = self.yaw[next_id]
+        yaw_prev = self.yaw_arr[next_id]
 
         d = np.abs((y_next - y_prev) * x_t - (x_next - x_prev) * y_t + x_next * y_prev - y_next * x_prev) / np.sqrt(
             (x_next - x_prev)**2 + (y_next - y_prev)**2)  # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
@@ -411,28 +493,25 @@ class road_reader:
 
     def find_speed_profile_information(self, sim_t):
         # Locate the index of front vehicle's distance
-        record_t = np.array(self.t)
-        t_id = np.argmin(np.abs(record_t - sim_t))
-        dist_t = self.dist[t_id]
-        speed_t = self.speed[t_id]
-        acc_t = self.acc[t_id]
+        t_id = self._nearest_time_index(sim_t)
+        dist_t = self.dist_arr[t_id]
+        speed_t = self.speed_arr[t_id]
+        acc_t = self.acc_arr[t_id]
 
         return speed_t, dist_t, acc_t
     
     def find_front_vehicle_predicted_state(self, dt, sim_t):
         # Locate the index of front vehicle's distance
-        front_t = np.array(self.t)
-        t_id = np.argmin(np.abs(front_t - sim_t))
+        t_id = self._nearest_time_index(sim_t)
         
         # Find the time id of future states
-        t_ref = np.array(self.t)
-        t_future = self.t[t_id] + dt
-        t_future_id = np.argmin(np.abs(t_ref - t_future))
+        t_future = self.t_arr[t_id] + dt
+        t_future_id = self._nearest_time_index(t_future)
         
         # Return the distance, speed and acceleration at future time step
-        dist_t = self.dist[t_future_id]
-        speed_t = self.speed[t_future_id]
-        acc_t = self.acc[t_future_id]
+        dist_t = self.dist_arr[t_future_id]
+        speed_t = self.speed_arr[t_future_id]
+        acc_t = self.acc_arr[t_future_id]
 
         return speed_t, dist_t, acc_t
 

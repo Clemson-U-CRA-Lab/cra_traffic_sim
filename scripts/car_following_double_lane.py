@@ -25,7 +25,7 @@ def road_reference_correction_msg_prep(ego_pitch):
     road_ref_correction_msg.road_ref_yaw = 0.0
     return road_ref_correction_msg
 
-def main_single_lane_following():
+def main_double_lane_following():
     # Path Parameters
     current_dirname = os.path.dirname(__file__)
     parent_dir = os.path.abspath(os.path.join(current_dirname, os.pardir))
@@ -256,4 +256,4 @@ def main_single_lane_following():
 
 
 if __name__ == "__main__":
-    main_single_lane_following()
+    main_double_lane_following()

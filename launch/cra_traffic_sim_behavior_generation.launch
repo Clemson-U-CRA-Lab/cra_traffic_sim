@@ -10,15 +10,18 @@
     <arg name="front_vehicle_stop_distance_tolerance" default="0.5"/>
     <arg name="front_vehicle_stop_speed_tolerance" default="0.1"/>
     <arg name="front_vehicle_stop_buffer" default="2.0"/>
+    <arg name="num_vehicles" default="4"/>
+    <arg name="side_lane_leader_initial_gap" default="6.0"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
     <param name="map" value="$(arg site_map)"/>
     <param name="spd_map" value="$(arg pv_speed_profile)"/>
-    <param name="num_vehicles" value="1"/>
+    <param name="num_vehicles" value="$(arg num_vehicles)"/>
     <param name="pv_states_dt" value="0.5"/>
     <param name="use_preview" value="$(arg use_preview)"/>
     <param name="koopman_lift_method" value="$(arg koopman_lift_method)"/>
+    <param name="side_lane_leader_initial_gap" value="$(arg side_lane_leader_initial_gap)"/>
     <param name="front_vehicle_travel_distance" value="$(arg front_vehicle_travel_distance)"/>
     <param name="front_vehicle_stop_distance_tolerance" value="$(arg front_vehicle_stop_distance_tolerance)"/>
     <param name="front_vehicle_stop_speed_tolerance" value="$(arg front_vehicle_stop_speed_tolerance)"/>
