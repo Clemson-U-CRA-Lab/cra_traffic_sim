@@ -272,8 +272,8 @@ def compute_safe_idm_acceleration(idm_control, traffic_manager, follower_id, lea
     )
 
 
-def update_side_lane_idm_followers(traffic_manager, idm_control, dt, num_vehicles):
-    for vehicle_id in range(1, num_vehicles):
+def update_side_lane_idm_followers(traffic_manager, idm_control, dt, num_vehicles, first_follower_id=2):
+    for vehicle_id in range(first_follower_id, num_vehicles):
         leader_id = vehicle_id - 1
         acc_t = compute_safe_idm_acceleration(
             idm_control=idm_control,
@@ -286,9 +286,19 @@ def update_side_lane_idm_followers(traffic_manager, idm_control, dt, num_vehicle
         traffic_manager.traffic_update_from_acceleration(dt=dt, a=acc_t, vehicle_id=vehicle_id)
 
 
-def initialize_side_lane_followers(traffic_manager, front_vehicle_s, leader_gap, follower_gap, num_vehicles):
+def sync_side_lane_leader_with_front_vehicle(traffic_manager, leader_offset, num_vehicles):
+    if num_vehicles <= 1:
+        return
+    traffic_manager.traffic_s[1] = traffic_manager.traffic_s[0] + leader_offset
+    traffic_manager.traffic_v[1] = traffic_manager.traffic_v[0]
+    traffic_manager.traffic_alon[1] = traffic_manager.traffic_alon[0]
+    traffic_manager.traffic_Sv_id[1] = 1
+    traffic_manager.traffic_l[1] = 1
+
+
+def initialize_side_lane_followers(traffic_manager, front_vehicle_s, leader_offset, follower_gap, num_vehicles):
     for vehicle_id in range(1, num_vehicles):
-        traffic_manager.traffic_s[vehicle_id] = front_vehicle_s - leader_gap - follower_gap * (vehicle_id - 1)
+        traffic_manager.traffic_s[vehicle_id] = front_vehicle_s + leader_offset - follower_gap * (vehicle_id - 1)
         traffic_manager.traffic_Sv_id[vehicle_id] = vehicle_id
         traffic_manager.traffic_l[vehicle_id] = 1
         traffic_manager.traffic_brake_status[vehicle_id] = True
@@ -314,7 +324,7 @@ def main_double_lane_behavior_generation():
     use_preview = bool(rospy.get_param("/use_preview"))
     run_direction = rospy.get_param("/runDirection")
     koopman_lift_method = rospy.get_param("/koopman_lift_method", "auto")
-    side_lane_leader_initial_gap = max(float(rospy.get_param("/side_lane_leader_initial_gap", 8.0)), 0.0)
+    side_lane_leader_distance_offset = max(float(rospy.get_param("/side_lane_leader_distance_offset", 12.0)), 0.0)
     front_vehicle_travel_distance = float(rospy.get_param("/front_vehicle_travel_distance"))
     front_vehicle_stop_distance_tolerance = max(
         float(rospy.get_param("/front_vehicle_stop_distance_tolerance", 0.05)),
@@ -351,7 +361,7 @@ def main_double_lane_behavior_generation():
         speed_profile_filename=spd_file,
         closed_track=closed_loop,
     )
-    idm_control = IDM(a=4, b=5, s0=5, v0=30, T=1.0)
+    idm_control = IDM(a=6, b=8, s0=6, v0=30, T=0.8)
 
     front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(
         horizon_length=8,
@@ -388,17 +398,17 @@ def main_double_lane_behavior_generation():
     ego_s_init = 0.0
     init_gap = 8.0
 
-    reward_tracking_duration = 10.0
+    reward_tracking_duration = 12.0
     reward_target_ramp_duration = reward_tracking_duration
     reward_target_max = 20.0
     reward_Q = 1.0
     reward_R = 10.0
     reward_R_du = 100.0
-    maintain_motion_duration = 5.0
+    maintain_motion_duration = 2.0
     behavior_generation_duration = reward_tracking_duration + maintain_motion_duration
-    front_vehicle_speed_limit = 22.5
+    front_vehicle_speed_limit = 17.9
     front_vehicle_acc_max = 4.0
-    front_vehicle_acc_min = -4.0
+    front_vehicle_acc_min = -6.0
     return_speed_tolerance = 0.3
     driving_cycle_distance_offset = 0.0
 
@@ -452,7 +462,7 @@ def main_double_lane_behavior_generation():
                 initialize_side_lane_followers(
                     traffic_manager=traffic_manager,
                     front_vehicle_s=traffic_manager.traffic_s[0],
-                    leader_gap=side_lane_leader_initial_gap,
+                    leader_offset=side_lane_leader_distance_offset,
                     follower_gap=init_gap,
                     num_vehicles=num_Sv,
                 )
@@ -685,11 +695,17 @@ def main_double_lane_behavior_generation():
                         stop_speed_tolerance=front_vehicle_stop_speed_tolerance,
                     )
 
+                    sync_side_lane_leader_with_front_vehicle(
+                        traffic_manager=traffic_manager,
+                        leader_offset=side_lane_leader_distance_offset,
+                        num_vehicles=num_Sv,
+                    )
                     update_side_lane_idm_followers(
                         traffic_manager=traffic_manager,
                         idm_control=idm_control,
                         dt=Dt,
                         num_vehicles=num_Sv,
+                        first_follower_id=2,
                     )
 
                     ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
