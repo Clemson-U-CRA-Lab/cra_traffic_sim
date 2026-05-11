@@ -4,8 +4,9 @@ close all
 dbstop if error
 
 %%  Configuration
-default_lift_method = "edmd_ttci_thwi"; % Options: "edmd_ttci_thwi", "sindy_ttci_thwi"
+default_lift_method = "edmd_ttci_thwi"; % Options: "edmd_ttci_thwi", "sindy_ttci_thwi", "sindy_baseline"
 lift_method = default_lift_method;
+default_reward_trajectory_filename = "dc1_reward_trajectory.csv";
 
 % Show a lift-method chooser when MATLAB GUI is available.
 if usejava('desktop') && usejava('awt')
@@ -14,12 +15,15 @@ if usejava('desktop') && usejava('awt')
         'Lift Method', ...
         'EDMD + TTCI/THWI', ...
         'SINDy + TTCI/THWI', ...
+        'SINDy Baseline', ...
         'EDMD + TTCI/THWI');
 
     if strcmp(selection, 'EDMD + TTCI/THWI')
         lift_method = "edmd_ttci_thwi";
     elseif strcmp(selection, 'SINDy + TTCI/THWI')
         lift_method = "sindy_ttci_thwi";
+    elseif strcmp(selection, 'SINDy Baseline')
+        lift_method = "sindy_baseline";
     elseif isempty(selection)
         lift_method = default_lift_method;
     else
@@ -28,7 +32,9 @@ if usejava('desktop') && usejava('awt')
 end
 
 %%  Section 1: Load the reward data
-data = readtable("dc1_reward_trajectory.csv");
+reward_trajectory_file = resolve_reward_trajectory_file(default_reward_trajectory_filename);
+disp(['Loaded reward trajectory: ', reward_trajectory_file]);
+data = readtable(reward_trajectory_file);
 ds = data.space_error.';
 dv = data.speed_error.';
 v_ego = data.ego_speed.';
@@ -61,10 +67,11 @@ baseline_rmse = sqrt(mean((reward - x_esti_baseline).^2));
 baseline_r2 = 1 - sum((reward - x_esti_baseline).^2) / sum((reward - mean(reward)).^2);
 
 %%  Compuate C matrices
+U = a_front(1:end-1) - a_ego(1:end-1);
+
 C = reward * pinv(z);
 Y = z(:, 2:end);
 X = z(:, 1:end-1);
-U = a_front(1:end-1) - a_ego(1:end-1);
 M = Y * pinv([X; U]);
 A = M(:, 1:end-1);
 B = M(:, end:end);
@@ -84,7 +91,7 @@ disp(['Selected lift RMSE: ', num2str(extended_rmse), ', R^2: ', num2str(extende
 plot(t, reward, '-k', 'LineWidth', 3);hold on
 plot(t, smoothdata(x_esti_baseline, 'rlowess', 10), '--b', 'LineWidth', 2)
 plot(t, smoothdata(x_esti, 'rlowess', 10), '-r', 'LineWidth', 3)
-xlabel('Time [s]');ylabel('Reward');xlim([0 250])
+xlabel('Time [s]');ylabel('Reward');
 legend('Assgined reward to human intervention', ...
        'Estimated reward from baseline 4-state lift', ...
        ['Estimated reward from selected lift: ', char(lift_method)])
@@ -114,15 +121,52 @@ end
 %%  Save the matrix
 save_data = input('Do you wish to save data?[0 or 1]: ');
 if save_data
+    output_dir = fileparts(mfilename('fullpath'));
     [A_m, A_n] = size(A);
     [B_m, B_n] = size(B);
     [C_m, C_n] = size(C);
-    writematrix(A, strcat(['A_', num2str(A_m), 'x', num2str(A_n), '_matrix.csv']));
-    writematrix(B, strcat(['B_', num2str(B_m), 'x', num2str(B_n), '_matrix.csv']));
-    writematrix(C, strcat(['C_', num2str(C_m), 'x', num2str(C_n), '_matrix.csv']));
+    writematrix(A, fullfile(output_dir, strcat(['A_', num2str(A_m), 'x', num2str(A_n), '_matrix.csv'])));
+    writematrix(B, fullfile(output_dir, strcat(['B_', num2str(B_m), 'x', num2str(B_n), '_matrix.csv'])));
+    writematrix(C, fullfile(output_dir, strcat(['C_', num2str(C_m), 'x', num2str(C_n), '_matrix.csv'])));
 end
 
 %%  Add lifting function
+function reward_trajectory_file = resolve_reward_trajectory_file(default_filename)
+    script_dir = fileparts(mfilename('fullpath'));
+    reward_trajectory_file = fullfile(script_dir, char(default_filename));
+
+    if isfile(reward_trajectory_file)
+        return
+    end
+
+    reward_files = dir(fullfile(script_dir, '*_reward_trajectory.csv'));
+    if isempty(reward_files)
+        error(['Reward trajectory file "%s" was not found in "%s", and no ' ...
+               '"*_reward_trajectory.csv" files are available. Run ' ...
+               'human_driver_reward_tracking.m first or copy the file into this folder.'], ...
+              char(default_filename), script_dir);
+    end
+
+    reward_file_names = {reward_files.name};
+    if usejava('desktop') && usejava('awt') && numel(reward_files) > 1
+        [selection_idx, ok] = listdlg( ...
+            'PromptString', 'Choose a reward trajectory CSV:', ...
+            'SelectionMode', 'single', ...
+            'ListString', reward_file_names, ...
+            'Name', 'Reward Trajectory');
+
+        if ok == 1
+            reward_trajectory_file = fullfile(script_dir, reward_files(selection_idx).name);
+            return
+        end
+    end
+
+    [~, newest_idx] = max([reward_files.datenum]);
+    reward_trajectory_file = fullfile(script_dir, reward_files(newest_idx).name);
+    warning('Reward trajectory file "%s" was not found. Using "%s" instead.', ...
+            char(default_filename), reward_files(newest_idx).name);
+end
+
 function z = koopman_lift_edmd(ds, dv, ttci, thwi, c_ds, c_dv, c_ttci, c_thwi, sigma)
     z = [];
     for i=1:1:length(c_ds)
@@ -150,8 +194,10 @@ function z = build_lifted_state(ds, dv, ttci, thwi, lift_method, c_ds, c_dv, c_t
         z = koopman_lift_edmd(ds, dv, ttci, thwi, c_ds, c_dv, c_ttci, c_thwi, sigma);
     elseif lift_method == "sindy_ttci_thwi"
         z = koopman_lift_sindy_ttci_thwi(ds, dv, ttci, thwi);
+    elseif lift_method == "sindy_baseline"
+        z = koopman_lift_sindy_baseline(ds, dv);
     else
-        error("Unsupported lift_method. Use ""edmd_ttci_thwi"" or ""sindy_ttci_thwi"".");
+        error("Unsupported lift_method. Use ""edmd_ttci_thwi"", ""sindy_ttci_thwi"", or ""sindy_baseline"".");
     end
 end
 
