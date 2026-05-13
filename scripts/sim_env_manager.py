@@ -131,6 +131,8 @@ class CMI_traffic_sim:
         self.ego_s = msg.pose.pose.orientation.z
         self.ego_sv = msg.twist.twist.linear.x
         self.ego_lv = msg.twist.twist.linear.y
+        self.ego_v_east = msg.twist.twist.linear.x
+        self.ego_v_north = msg.twist.twist.linear.y
         self.ego_v = (msg.twist.twist.linear.x ** 2 + msg.twist.twist.linear.y ** 2) ** 0.5
         self.ego_acc = msg.pose.pose.orientation.x
         self.ego_pose_ref = np.array(
@@ -150,11 +152,22 @@ class CMI_traffic_sim:
         self.ego_pose_ref = np.array(
             [[self.ego_x], [self.ego_y], [self.ego_z]])
 
-    def traffic_initialization(self, s_ego, ds, line_number, vehicle_id, vehicle_id_in_lane):
+    def traffic_initialization(
+        self,
+        s_ego,
+        ds,
+        line_number,
+        vehicle_id,
+        vehicle_id_in_lane,
+        initial_speed=0.0,
+        initial_acceleration=0.0,
+    ):
         self.traffic_s[vehicle_id] = s_ego + ds * (vehicle_id_in_lane + 1)
         self.traffic_Sv_id[vehicle_id] = vehicle_id
         self.traffic_l[vehicle_id] = line_number
-        self.traffic_brake_status[vehicle_id] = True
+        self.traffic_v[vehicle_id] = initial_speed
+        self.traffic_alon[vehicle_id] = initial_acceleration
+        self.traffic_brake_status[vehicle_id] = initial_acceleration <= 0.0
     
     def global_vehicle_update(self, veh_ID, x, y, z, yaw, pitch):
         self.traffic_x[veh_ID] = x
@@ -213,8 +226,8 @@ class CMI_traffic_sim:
     def ego_vehicle_frenet_update(self, s, l, sv, lv, yaw_s):
         self.ego_s = s
         self.ego_l = l
-        # self.ego_sv = sv
-        # self.ego_lv = lv
+        self.ego_sv = sv
+        self.ego_lv = lv
         self.ego_yaw_s = yaw_s
     
     def ego_acceleration_pitch_update(self, pitch_max, pitch_min, acc_max, acc_min, smoothing_factor=0.1):

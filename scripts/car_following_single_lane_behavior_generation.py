@@ -397,6 +397,7 @@ def main_double_lane_behavior_generation():
     sim_t = 0.0
     ego_s_init = 0.0
     init_gap = 8.0
+    init_spd_t, _, _ = traffic_map_manager.find_speed_profile_information(sim_t=0.0)
 
     reward_tracking_duration = 12.0
     reward_target_ramp_duration = reward_tracking_duration
@@ -458,6 +459,8 @@ def main_double_lane_behavior_generation():
                     line_number=0,
                     vehicle_id=0,
                     vehicle_id_in_lane=0,
+                    initial_speed=init_spd_t,
+                    initial_acceleration=0.0,
                 )
                 initialize_side_lane_followers(
                     traffic_manager=traffic_manager,
@@ -469,6 +472,30 @@ def main_double_lane_behavior_generation():
                 ego_s_init = s_ego_frenet
                 if front_vehicle_travel_distance > 0.0:
                     front_vehicle_stop_target_s = traffic_manager.traffic_s[0] + front_vehicle_travel_distance
+
+                traffic_manager.ego_s = s_ego_frenet
+                traffic_manager.ego_l = 0.0
+                traffic_manager.ego_sv = init_spd_t
+                traffic_manager.ego_v = init_spd_t
+                traffic_manager.ego_lv = 0.0
+                traffic_manager.ego_acc = 0.0
+                traffic_manager.ego_yaw_s = 0.0
+
+                front_s_t[0] = round(traffic_manager.traffic_s[0], 3)
+                front_v_t[0] = round(traffic_manager.traffic_v[0], 3)
+                front_a_t[0] = round(traffic_manager.traffic_alon[0], 3)
+
+                traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
+                traffic_manager.construct_vehicle_state_sequence_msg(
+                    id=msg_counter,
+                    t=sim_t,
+                    s=front_s_t,
+                    v=front_v_t,
+                    a=front_a_t,
+                    sim_start=traffic_manager.sim_start,
+                )
+                traffic_manager.publish_traffic_sim_info()
+                traffic_manager.publish_vehicle_traj()
                 continue
             else:
                 msg_counter += 1

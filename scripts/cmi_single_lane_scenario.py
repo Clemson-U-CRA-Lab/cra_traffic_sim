@@ -53,6 +53,7 @@ def main_single_lane_following():
     sim_t = 0.0
     ego_s_init = 0.0
     init_gap = 8.0
+    init_spd_t, _, init_acc_t = traffic_map_manager.find_speed_profile_information(sim_t=0.0)
 
     while not rospy.is_shutdown():
         try:
@@ -86,8 +87,49 @@ def main_single_lane_following():
                 # Update simulation time
                 sim_t += Dt
                 # Find initial distance as start distance on the map
-                traffic_manager.traffic_initialization(s_ego=s_ego_frenet, ds=init_gap, line_number=0, vehicle_id=0, vehicle_id_in_lane=0) # One vehicle in lane 0
+                traffic_manager.traffic_initialization(
+                    s_ego=s_ego_frenet,
+                    ds=init_gap,
+                    line_number=0,
+                    vehicle_id=0,
+                    vehicle_id_in_lane=0,
+                    initial_speed=init_spd_t,
+                    initial_acceleration=init_acc_t,
+                ) # One vehicle in lane 0
                 ego_s_init = s_ego_frenet
+
+                ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                     ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                     ego_vehicle_ref_poses[4]]
+                _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager.find_ego_frenet_pose(
+                    ego_poses=traffic_manager.ego_pose_ref,
+                    ego_yaw=ego_vehicle_poses[3],
+                    vy=traffic_manager.ego_v_north,
+                    vx=traffic_manager.ego_v_east,
+                )
+                traffic_manager.ego_vehicle_frenet_update(
+                    s=s_ego_frenet,
+                    l=0,
+                    sv=v_longitudinal,
+                    lv=v_lateral,
+                    yaw_s=yaw_s,
+                )
+
+                front_s_t[0] = round(traffic_manager.traffic_s[0], 3)
+                front_v_t[0] = round(traffic_manager.traffic_v[0], 3)
+                front_a_t[0] = round(traffic_manager.traffic_alon[0], 3)
+
+                traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
+                traffic_manager.construct_vehicle_state_sequence_msg(
+                    id=msg_counter,
+                    t=sim_t,
+                    s=front_s_t,
+                    v=front_v_t,
+                    a=front_a_t,
+                    sim_start=traffic_manager.sim_start,
+                )
+                traffic_manager.publish_traffic_sim_info()
+                traffic_manager.publish_vehicle_traj()
                 continue
             else:
                 msg_counter += 1

@@ -55,6 +55,8 @@ class anl_sim_env:
     
     def traffic_sim_info_callback(self, msg):
         self.sim_t = msg.sim_T
+        self.ego_v = msg.E_v_sv
+        self.ego_acc = msg.E_v_acc
         self.front_s = msg.S_v_s[0]
         self.front_v = msg.S_v_sv[0]
         self.front_a = msg.S_v_acc[0]
