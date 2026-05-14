@@ -38,6 +38,7 @@ class anl_sim_env:
         self.front_s = 0.0
         self.front_v = 0.0
         self.front_a = 0.0
+        self.traffic_init_applied = False
         
         self.brake_torque = 0.0
         self.acc_pedal_output = 0.0
@@ -58,6 +59,12 @@ class anl_sim_env:
         self.front_s = msg.S_v_s[0]
         self.front_v = msg.S_v_sv[0]
         self.front_a = msg.S_v_acc[0]
+        if not self.traffic_init_applied and self.sim_t > 0.0:
+            self.ego_v = self.front_v
+            self.ego_sdot = self.front_v
+            self.acc = self.front_a
+            self.acc_tgt = self.front_a
+            self.traffic_init_applied = True
     
     def brake_report_callback(self, msg):
         self.brake_torque = msg.torque_output
@@ -154,6 +161,14 @@ if __name__ == "__main__":
     file = open(endpoint_file_path)
     lanes_xy = np.float_(list(csv.reader(file,delimiter=",")))
     file.close()
+    
+    # Load speed map to find the initial speed of the ego vehicle
+    current_dirname = os.path.dirname(__file__)
+    parent_dir = os.path.abspath(os.path.join(current_dirname, os.pardir))
+    spd_filename = rospy.get_param("/spd_map")
+    spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
+    spd_profile = driving_cycle_spd_profile_reader(spd_file)
+    ego_v_init = float(spd_profile[0, 1])
     
     if run_direction == 0:
         x0 = lanes_xy[0][0]
