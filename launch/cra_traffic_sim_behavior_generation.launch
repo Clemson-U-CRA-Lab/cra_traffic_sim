@@ -10,8 +10,14 @@
     <arg name="front_vehicle_stop_distance_tolerance" default="0.5"/>
     <arg name="front_vehicle_stop_speed_tolerance" default="0.1"/>
     <arg name="front_vehicle_stop_buffer" default="2.0"/>
+    <arg name="front_vehicle_speed_limit" default="35.0"/>
     <arg name="num_vehicles" default="5"/>
     <arg name="side_lane_leader_distance_offset" default="3.0"/>
+    <arg name="side_lane_cbf_enable" default="true"/>
+    <arg name="side_lane_cbf_alpha" default="8.0"/>
+    <arg name="side_lane_cbf_s0" default="5.0"/>
+    <arg name="side_lane_cbf_T" default="1.0"/>
+    <arg name="side_lane_cbf_emergency_decel_margin" default="2.0"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
@@ -26,6 +32,12 @@
     <param name="front_vehicle_stop_distance_tolerance" value="$(arg front_vehicle_stop_distance_tolerance)"/>
     <param name="front_vehicle_stop_speed_tolerance" value="$(arg front_vehicle_stop_speed_tolerance)"/>
     <param name="front_vehicle_stop_buffer" value="$(arg front_vehicle_stop_buffer)"/>
+    <param name="front_vehicle_speed_limit" value="$(arg front_vehicle_speed_limit)"/>
+    <param name="side_lane_cbf_enable" value="$(arg side_lane_cbf_enable)"/>
+    <param name="side_lane_cbf_alpha" value="$(arg side_lane_cbf_alpha)"/>
+    <param name="side_lane_cbf_s0" value="$(arg side_lane_cbf_s0)"/>
+    <param name="side_lane_cbf_T" value="$(arg side_lane_cbf_T)"/>
+    <param name="side_lane_cbf_emergency_decel_margin" value="$(arg side_lane_cbf_emergency_decel_margin)"/>
     <param name="track_style" value="Rally"/>
     <node pkg="cra_traffic_sim" type="car_following_single_lane_behavior_generation.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
     <node pkg="joy" type="joy_node" name="joy_node" output="screen" />

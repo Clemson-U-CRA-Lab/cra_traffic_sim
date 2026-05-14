@@ -20,6 +20,13 @@ STOP_AT_DISTANCE_MODE = "stop_at_distance"
 HOLD_STOPPED_MODE = "hold_stopped"
 
 
+def get_bool_param(param_name, default):
+    value = rospy.get_param(param_name, default)
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def road_reference_correction_msg_prep(ego_pitch):
     road_ref_correction_msg = ref_traj_correction()
     road_ref_correction_msg.road_ref_x = 0.0
@@ -258,32 +265,64 @@ def build_front_preview(
     return front_s_t, front_v_t, front_a_t
 
 
-def compute_safe_idm_acceleration(idm_control, traffic_manager, follower_id, leader_id):
-    leader_s = traffic_manager.traffic_s[leader_id]
-    follower_s = traffic_manager.traffic_s[follower_id]
-    if leader_s - follower_s <= idm_control.s0 + 1e-3:
-        return -4.0
-
-    return idm_control.IDM_acceleration(
-        front_v=traffic_manager.traffic_v[leader_id],
-        ego_v=traffic_manager.traffic_v[follower_id],
-        front_s=leader_s,
-        ego_s=follower_s,
+def update_side_lane_idm_followers(
+    traffic_manager,
+    idm_control,
+    dt,
+    num_vehicles,
+    side_lane_speed_limit,
+    side_lane_acc_min,
+    side_lane_acc_max,
+    side_lane_cbf_enable,
+    side_lane_cbf_alpha,
+    side_lane_cbf_s0,
+    side_lane_cbf_time_headway,
+    side_lane_cbf_emergency_decel_margin,
+    first_follower_id=2,
+):
+    side_lane_effective_acc_min = (
+        side_lane_acc_min - side_lane_cbf_emergency_decel_margin
+        if side_lane_cbf_enable
+        else side_lane_acc_min
     )
 
-
-def update_side_lane_idm_followers(traffic_manager, idm_control, dt, num_vehicles, first_follower_id=2):
     for vehicle_id in range(first_follower_id, num_vehicles):
         leader_id = vehicle_id - 1
-        acc_t = compute_safe_idm_acceleration(
-            idm_control=idm_control,
-            traffic_manager=traffic_manager,
-            follower_id=vehicle_id,
-            leader_id=leader_id,
+        idm_acc = idm_control.safe_IDM_acceleration(
+            front_v=traffic_manager.traffic_v[leader_id],
+            ego_v=traffic_manager.traffic_v[vehicle_id],
+            front_s=traffic_manager.traffic_s[leader_id],
+            ego_s=traffic_manager.traffic_s[vehicle_id],
+            fallback_acc=side_lane_acc_min,
+        )
+        acc_t, _, _, _ = idm_control.CBF_acceleration_filter(
+            commanded_acc=idm_acc,
+            front_v=traffic_manager.traffic_v[leader_id],
+            ego_v=traffic_manager.traffic_v[vehicle_id],
+            front_s=traffic_manager.traffic_s[leader_id],
+            ego_s=traffic_manager.traffic_s[vehicle_id],
+            acc_min=side_lane_acc_min,
+            acc_max=side_lane_acc_max,
+            cbf_enable=side_lane_cbf_enable,
+            cbf_alpha=side_lane_cbf_alpha,
+            cbf_s0=side_lane_cbf_s0,
+            cbf_T=side_lane_cbf_time_headway,
+            emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
         )
         if traffic_manager.traffic_v[vehicle_id] <= 0.0 and acc_t < 0.0:
             acc_t = 0.0
-        traffic_manager.traffic_update_from_acceleration(dt=dt, a=acc_t, vehicle_id=vehicle_id)
+        next_s, next_v, next_a = clamp_vehicle_state(
+            traffic_manager.traffic_s[vehicle_id],
+            traffic_manager.traffic_v[vehicle_id],
+            acc_t,
+            dt,
+            side_lane_speed_limit,
+            side_lane_effective_acc_min,
+            side_lane_acc_max,
+        )
+        traffic_manager.traffic_s[vehicle_id] = next_s
+        traffic_manager.traffic_v[vehicle_id] = next_v
+        traffic_manager.traffic_alon[vehicle_id] = next_a
 
 
 def sync_side_lane_leader_with_front_vehicle(traffic_manager, leader_offset, num_vehicles):
@@ -319,12 +358,17 @@ def main_double_lane_behavior_generation():
 
     map_filename = rospy.get_param("/map")
     spd_filename = rospy.get_param("/spd_map")
-    run_sim = bool(rospy.get_param("/run_sim"))
+    run_sim = get_bool_param("/run_sim", True)
     pv_dt = float(rospy.get_param("/pv_states_dt"))
-    use_preview = bool(rospy.get_param("/use_preview"))
+    use_preview = get_bool_param("/use_preview", False)
     run_direction = rospy.get_param("/runDirection")
     koopman_lift_method = rospy.get_param("/koopman_lift_method", "auto")
     side_lane_leader_distance_offset = max(float(rospy.get_param("/side_lane_leader_distance_offset", 12.0)), 0.0)
+    side_lane_cbf_enable = get_bool_param("/side_lane_cbf_enable", True)
+    side_lane_cbf_alpha = float(rospy.get_param("/side_lane_cbf_alpha", 8.0))
+    side_lane_cbf_s0 = float(rospy.get_param("/side_lane_cbf_s0", 6.0))
+    side_lane_cbf_time_headway = float(rospy.get_param("/side_lane_cbf_T", 0.5))
+    side_lane_cbf_emergency_decel_margin = float(rospy.get_param("/side_lane_cbf_emergency_decel_margin", 2.0))
     front_vehicle_travel_distance = float(rospy.get_param("/front_vehicle_travel_distance"))
     front_vehicle_stop_distance_tolerance = max(
         float(rospy.get_param("/front_vehicle_stop_distance_tolerance", 0.05)),
@@ -361,7 +405,7 @@ def main_double_lane_behavior_generation():
         speed_profile_filename=spd_file,
         closed_track=closed_loop,
     )
-    idm_control = IDM(a=6, b=8, s0=6, v0=30, T=0.8)
+    idm_control = IDM(a=4, b=6, s0=6, v0=35, T=0.8)
 
     front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(
         horizon_length=8,
@@ -407,9 +451,12 @@ def main_double_lane_behavior_generation():
     reward_R_du = 100.0
     maintain_motion_duration = 2.0
     behavior_generation_duration = reward_tracking_duration + maintain_motion_duration
-    front_vehicle_speed_limit = 17.9
+    front_vehicle_speed_limit = float(rospy.get_param("/front_vehicle_speed_limit", 35.0)) * 0.44704
     front_vehicle_acc_max = 4.0
     front_vehicle_acc_min = -6.0
+    side_lane_speed_limit = float(rospy.get_param("/side_lane_speed_limit", front_vehicle_speed_limit))
+    side_lane_acc_max = float(rospy.get_param("/side_lane_acceleration_upper_limit", 3.0))
+    side_lane_acc_min = float(rospy.get_param("/side_lane_acceleration_lower_limit", -6.0))
     return_speed_tolerance = 0.3
     driving_cycle_distance_offset = 0.0
 
@@ -732,6 +779,14 @@ def main_double_lane_behavior_generation():
                         idm_control=idm_control,
                         dt=Dt,
                         num_vehicles=num_Sv,
+                        side_lane_speed_limit=side_lane_speed_limit,
+                        side_lane_acc_min=side_lane_acc_min,
+                        side_lane_acc_max=side_lane_acc_max,
+                        side_lane_cbf_enable=side_lane_cbf_enable,
+                        side_lane_cbf_alpha=side_lane_cbf_alpha,
+                        side_lane_cbf_s0=side_lane_cbf_s0,
+                        side_lane_cbf_time_headway=side_lane_cbf_time_headway,
+                        side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
                         first_follower_id=2,
                     )
 

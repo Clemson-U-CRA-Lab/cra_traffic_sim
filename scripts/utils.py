@@ -9,6 +9,7 @@ from dataspeed_ulc_msgs.msg import UlcCmd
 from hololens_ros_communication.msg import hololens_info
 from cra_traffic_sim.msg import mpc_pose_reference
 
+
 class IDM():
     def __init__(self, a, b, s0, v0, T):
         self.a = a
@@ -18,11 +19,93 @@ class IDM():
         self.T = T
 
     def IDM_acceleration(self, front_v, ego_v, front_s, ego_s):
-        s_safe = self.s0 + ego_v * self.T + front_v * (ego_v - front_v) / (2 * (self.a * self.b)**0.5)
+        s_safe = (
+            self.s0
+            + ego_v * self.T
+            + front_v * (ego_v - front_v) / (2 * (self.a * self.b) ** 0.5)
+        )
         s_safe = np.clip(s_safe, self.s0 + 3, np.inf)
-        acc = self.a * (1 - (ego_v / self.v0) ** 4 - (s_safe / (front_s - ego_s - self.s0)) ** 2)
-        acc = np.clip(acc, -4, 4)
+        acc = self.a * (
+            1
+            - (ego_v / self.v0) ** 4
+            - (s_safe / (front_s - ego_s - self.s0)) ** 2
+        )
+        acc = np.clip(acc, -6, 3)
         return acc
+
+    def safe_IDM_acceleration(self, front_v, ego_v, front_s, ego_s, fallback_acc=-6.0):
+        if front_s - ego_s <= self.s0 + 1e-3:
+            return fallback_acc
+
+        return self.IDM_acceleration(
+            front_v=front_v,
+            ego_v=ego_v,
+            front_s=front_s,
+            ego_s=ego_s,
+        )
+
+    def CBF_safe_acceleration(
+        self,
+        front_v,
+        ego_v,
+        front_s,
+        ego_s,
+        acc_min=-6.0,
+        acc_max=3.0,
+        cbf_alpha=8.0,
+        cbf_s0=None,
+        cbf_T=None,
+        emergency_decel_margin=2.0,
+    ):
+        s0 = self.s0 if cbf_s0 is None else cbf_s0
+        tau = max(float(self.T if cbf_T is None else cbf_T), 1e-3)
+        distance_gap = float(front_s) - float(ego_s)
+        barrier = distance_gap - float(s0) - tau * float(ego_v)
+        safe_acc = (float(front_v) - float(ego_v) + float(cbf_alpha) * barrier) / tau
+        safe_acc = float(
+            np.clip(
+                safe_acc,
+                float(acc_min) - float(emergency_decel_margin),
+                float(acc_max),
+            )
+        )
+        return safe_acc, distance_gap
+
+    def CBF_acceleration_filter(
+        self,
+        commanded_acc,
+        front_v,
+        ego_v,
+        front_s,
+        ego_s,
+        acc_min=-6.0,
+        acc_max=3.0,
+        cbf_enable=True,
+        cbf_alpha=8.0,
+        cbf_s0=None,
+        cbf_T=None,
+        emergency_decel_margin=2.0,
+    ):
+        commanded_acc = float(np.clip(commanded_acc, acc_min, acc_max))
+        if not cbf_enable:
+            distance_gap = float(front_s) - float(ego_s)
+            return commanded_acc, commanded_acc, distance_gap, False
+
+        safe_acc, distance_gap = self.CBF_safe_acceleration(
+            front_v=front_v,
+            ego_v=ego_v,
+            front_s=front_s,
+            ego_s=ego_s,
+            acc_min=acc_min,
+            acc_max=acc_max,
+            cbf_alpha=cbf_alpha,
+            cbf_s0=cbf_s0,
+            cbf_T=cbf_T,
+            emergency_decel_margin=emergency_decel_margin,
+        )
+        filtered_acc = min(commanded_acc, safe_acc)
+        return filtered_acc, safe_acc, distance_gap, filtered_acc < commanded_acc
+
 
 def delta_yaw_correction(delta_yaw):
     if delta_yaw > math.pi:
