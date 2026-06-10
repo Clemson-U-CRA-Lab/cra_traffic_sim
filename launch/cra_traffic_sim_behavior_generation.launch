@@ -12,12 +12,18 @@
     <arg name="front_vehicle_stop_buffer" default="2.0"/>
     <arg name="front_vehicle_speed_limit" default="35.0"/>
     <arg name="num_vehicles" default="5"/>
-    <arg name="side_lane_leader_distance_offset" default="3.0"/>
+    <arg name="side_lane_leader_distance_offset" default="1.0"/>
     <arg name="side_lane_cbf_enable" default="true"/>
-    <arg name="side_lane_cbf_alpha" default="8.0"/>
-    <arg name="side_lane_cbf_s0" default="5.0"/>
-    <arg name="side_lane_cbf_T" default="1.0"/>
+    <arg name="side_lane_cbf_alpha" default="5.0"/>
+    <arg name="side_lane_cbf_s0" default="10.0"/>
+    <arg name="side_lane_cbf_T" default="2.0"/>
     <arg name="side_lane_cbf_emergency_decel_margin" default="2.0"/>
+    <arg name="auto_behavior_generation_enable" default="true"/>
+    <arg name="human_intervention_acc_threshold" default="0.05"/>
+    <arg name="auto_behavior_generation_delay_min" default="15.0"/>
+    <arg name="auto_behavior_generation_delay_max" default="25.0"/>
+    <arg name="control_target_stale_timeout" default="1.0"/>
+    <arg name="auto_behavior_generation_random_seed" default="-1"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
@@ -38,6 +44,12 @@
     <param name="side_lane_cbf_s0" value="$(arg side_lane_cbf_s0)"/>
     <param name="side_lane_cbf_T" value="$(arg side_lane_cbf_T)"/>
     <param name="side_lane_cbf_emergency_decel_margin" value="$(arg side_lane_cbf_emergency_decel_margin)"/>
+    <param name="auto_behavior_generation_enable" value="$(arg auto_behavior_generation_enable)"/>
+    <param name="human_intervention_acc_threshold" value="$(arg human_intervention_acc_threshold)"/>
+    <param name="auto_behavior_generation_delay_min" value="$(arg auto_behavior_generation_delay_min)"/>
+    <param name="auto_behavior_generation_delay_max" value="$(arg auto_behavior_generation_delay_max)"/>
+    <param name="control_target_stale_timeout" value="$(arg control_target_stale_timeout)"/>
+    <param name="auto_behavior_generation_random_seed" value="$(arg auto_behavior_generation_random_seed)"/>
     <param name="track_style" value="Rally"/>
     <node pkg="cra_traffic_sim" type="car_following_single_lane_behavior_generation.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
     <node pkg="joy" type="joy_node" name="joy_node" output="screen" />

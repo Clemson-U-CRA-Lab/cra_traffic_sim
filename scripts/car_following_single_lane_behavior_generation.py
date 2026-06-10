@@ -6,6 +6,7 @@ import time
 import numpy as np
 import rospy
 from hololens_ros_communication.msg import ref_traj_correction
+from mach_e_control.msg import control_target
 from std_msgs.msg import Int8
 
 from sim_env_manager import *
@@ -25,6 +26,77 @@ def get_bool_param(param_name, default):
     if isinstance(value, str):
         return value.lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+class HumanInterventionMonitor:
+    def __init__(self, acc_threshold, delay_min, delay_max, stale_timeout, random_seed):
+        self.acc_threshold = max(float(acc_threshold), 0.0)
+        self.delay_min = max(float(delay_min), 0.0)
+        self.delay_max = max(float(delay_max), self.delay_min)
+        self.stale_timeout = max(float(stale_timeout), 0.0)
+        self.last_msg_time = None
+        self.last_human_acc = 0.0
+        self.quiet_start_time = None
+        self.quiet_delay = None
+
+        if int(random_seed) >= 0:
+            self.rng = np.random.RandomState(int(random_seed))
+        else:
+            self.rng = np.random.RandomState()
+
+        self.sub_control_target = rospy.Subscriber(
+            "/control_target_cmd",
+            control_target,
+            self.control_target_callback,
+        )
+
+    def control_target_callback(self, msg):
+        self.last_msg_time = time.time()
+        self.last_human_acc = float(msg.human_acceleration_command)
+
+    def reset_quiet_window(self):
+        self.quiet_start_time = None
+        self.quiet_delay = None
+
+    def _ensure_quiet_window(self, now):
+        if self.quiet_start_time is not None:
+            return
+        self.quiet_start_time = now
+        self.quiet_delay = float(self.rng.uniform(self.delay_min, self.delay_max))
+        rospy.loginfo(
+            "No human intervention detected. Auto behavior-generation delay sampled as %.2f s.",
+            self.quiet_delay,
+        )
+
+    def should_trigger(self):
+        now = time.time()
+        if self.last_msg_time is None:
+            self.reset_quiet_window()
+            rospy.logwarn_throttle(
+                2.0,
+                "Waiting for /control_target_cmd before auto behavior-generation timing starts.",
+            )
+            return False
+
+        if now - self.last_msg_time > self.stale_timeout:
+            self.reset_quiet_window()
+            rospy.logwarn_throttle(
+                2.0,
+                "/control_target_cmd is stale; auto behavior-generation timing is paused.",
+            )
+            return False
+
+        if abs(self.last_human_acc) > self.acc_threshold:
+            self.reset_quiet_window()
+            rospy.loginfo_throttle(
+                2.0,
+                "Human intervention detected: human_acceleration_command=%.3f m/s^2.",
+                self.last_human_acc,
+            )
+            return False
+
+        self._ensure_quiet_window(now)
+        return now - self.quiet_start_time >= self.quiet_delay
 
 
 def road_reference_correction_msg_prep(ego_pitch):
@@ -379,6 +451,12 @@ def main_double_lane_behavior_generation():
         0.0,
     )
     front_vehicle_stop_buffer = max(float(rospy.get_param("/front_vehicle_stop_buffer", 2.0)), 0.0)
+    auto_behavior_generation_enable = get_bool_param("/auto_behavior_generation_enable", True)
+    human_intervention_acc_threshold = float(rospy.get_param("/human_intervention_acc_threshold", 0.05))
+    auto_behavior_generation_delay_min = float(rospy.get_param("/auto_behavior_generation_delay_min", 15.0))
+    auto_behavior_generation_delay_max = float(rospy.get_param("/auto_behavior_generation_delay_max", 25.0))
+    control_target_stale_timeout = float(rospy.get_param("/control_target_stale_timeout", 1.0))
+    auto_behavior_generation_random_seed = int(rospy.get_param("/auto_behavior_generation_random_seed", -1))
 
     map_1_file = os.path.join(parent_dir, "maps", map_filename)
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
@@ -386,6 +464,15 @@ def main_double_lane_behavior_generation():
 
     rospy.init_node("CRA_Digital_Twin_Traffic")
     rate = rospy.Rate(100)
+    human_intervention_monitor = None
+    if auto_behavior_generation_enable:
+        human_intervention_monitor = HumanInterventionMonitor(
+            acc_threshold=human_intervention_acc_threshold,
+            delay_min=auto_behavior_generation_delay_min,
+            delay_max=auto_behavior_generation_delay_max,
+            stale_timeout=control_target_stale_timeout,
+            random_seed=auto_behavior_generation_random_seed,
+        )
 
     traffic_manager = CMI_traffic_sim(
         max_num_vehicles=12,
@@ -443,13 +530,13 @@ def main_double_lane_behavior_generation():
     init_gap = 8.0
     init_spd_t, _, _ = traffic_map_manager.find_speed_profile_information(sim_t=0.0)
 
-    reward_tracking_duration = 12.0
+    reward_tracking_duration = 8.0
     reward_target_ramp_duration = reward_tracking_duration
     reward_target_max = 20.0
     reward_Q = 1.0
     reward_R = 10.0
     reward_R_du = 100.0
-    maintain_motion_duration = 2.0
+    maintain_motion_duration = 1.0
     behavior_generation_duration = reward_tracking_duration + maintain_motion_duration
     front_vehicle_speed_limit = float(rospy.get_param("/front_vehicle_speed_limit", 35.0)) * 0.44704
     front_vehicle_acc_max = 4.0
@@ -497,6 +584,9 @@ def main_double_lane_behavior_generation():
             lowlevel_heartbeat_msg = Int8()
             lowlevel_heartbeat_msg.data = 1
             lowlevel_heartbeat_publisher.publish(lowlevel_heartbeat_msg)
+
+            if human_intervention_monitor is not None and not traffic_manager.sim_start:
+                human_intervention_monitor.reset_quiet_window()
 
             if sim_t < 0.5 and traffic_manager.sim_start:
                 sim_t += Dt
@@ -557,10 +647,26 @@ def main_double_lane_behavior_generation():
                         )
                         front_vehicle_stop_target_logged = True
 
-                    if scenario_mode == DRIVING_CYCLE_MODE and traffic_manager.consume_behavior_generation_request():
-                        scenario_mode = BEHAVIOR_GENERATION_MODE
-                        behavior_generation_start_time = sim_t
-                        rospy.loginfo("Front vehicle switched to behavior generation mode.")
+                    if human_intervention_monitor is not None and scenario_mode != DRIVING_CYCLE_MODE:
+                        human_intervention_monitor.reset_quiet_window()
+
+                    if scenario_mode == DRIVING_CYCLE_MODE:
+                        manual_behavior_request = traffic_manager.consume_behavior_generation_request()
+                        auto_behavior_request = (
+                            human_intervention_monitor is not None
+                            and human_intervention_monitor.should_trigger()
+                        )
+                        if manual_behavior_request or auto_behavior_request:
+                            scenario_mode = BEHAVIOR_GENERATION_MODE
+                            behavior_generation_start_time = sim_t
+                            if human_intervention_monitor is not None:
+                                human_intervention_monitor.reset_quiet_window()
+                            trigger_source = (
+                                "automatic no-intervention timer"
+                                if auto_behavior_request
+                                else "manual joystick request"
+                            )
+                            rospy.loginfo("Front vehicle switched to behavior generation mode by %s.", trigger_source)
 
                     if front_vehicle_stop_target_s is not None and scenario_mode not in {
                         STOP_AT_DISTANCE_MODE,
@@ -791,8 +897,8 @@ def main_double_lane_behavior_generation():
                     )
 
                     ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
-                        pitch_max=2 / RAD_TO_DEGREE,
-                        pitch_min=-2 / RAD_TO_DEGREE,
+                        pitch_max= 1.6 / RAD_TO_DEGREE,
+                        pitch_min= -2 / RAD_TO_DEGREE,
                         acc_max=4.0,
                         acc_min=-6.0,
                     )

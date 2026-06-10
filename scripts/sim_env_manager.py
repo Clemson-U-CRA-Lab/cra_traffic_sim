@@ -208,13 +208,13 @@ class CMI_traffic_sim:
     
     def traffic_brake_status_update(self, vehicle_id):
         # Calculate air resistance
-        f_air = 0.5 * 1.225 * 0.28 * 2.6 * self.traffic_v[vehicle_id] ** 2; # air resistance
+        f_air = 0.5 * 1.225 * 0.32 * 2.8 * self.traffic_v[vehicle_id] ** 2; # air resistance
         # Calculate rolling resistance
         f_roll = 0.015 * 2250 * 9.81; # rolling resistance
         # Calculate total resistance
         f_total = f_air + f_roll
         # Calculate acceleration due to resistance
-        a_resistance = -f_total / 2250
+        a_resistance = f_total / 2250
         # Calculate human brake acceleration
         a_forward_acceleration = self.traffic_alon[vehicle_id] + a_resistance
         # Update brake status
