@@ -530,13 +530,13 @@ def main_double_lane_behavior_generation():
     init_gap = 8.0
     init_spd_t, _, _ = traffic_map_manager.find_speed_profile_information(sim_t=0.0)
 
-    reward_tracking_duration = 8.0
+    reward_tracking_duration = 6.0
     reward_target_ramp_duration = reward_tracking_duration
     reward_target_max = 20.0
     reward_Q = 1.0
     reward_R = 10.0
     reward_R_du = 100.0
-    maintain_motion_duration = 1.0
+    maintain_motion_duration = 4.0
     behavior_generation_duration = reward_tracking_duration + maintain_motion_duration
     front_vehicle_speed_limit = float(rospy.get_param("/front_vehicle_speed_limit", 35.0)) * 0.44704
     front_vehicle_acc_max = 4.0

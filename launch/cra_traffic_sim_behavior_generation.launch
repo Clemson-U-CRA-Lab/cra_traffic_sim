@@ -20,8 +20,8 @@
     <arg name="side_lane_cbf_emergency_decel_margin" default="2.0"/>
     <arg name="auto_behavior_generation_enable" default="true"/>
     <arg name="human_intervention_acc_threshold" default="0.05"/>
-    <arg name="auto_behavior_generation_delay_min" default="15.0"/>
-    <arg name="auto_behavior_generation_delay_max" default="25.0"/>
+    <arg name="auto_behavior_generation_delay_min" default="5.0"/>
+    <arg name="auto_behavior_generation_delay_max" default="15.0"/>
     <arg name="control_target_stale_timeout" default="1.0"/>
     <arg name="auto_behavior_generation_random_seed" default="-1"/>
 
