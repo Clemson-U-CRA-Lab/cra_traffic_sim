@@ -673,6 +673,7 @@ class preceding_vehicle_spd_profile_generation():
         self.reward_tracking_x_opt = None
         self.reward_tracking_rw_opt = None
         self.reward_tracking_err_opt = None
+        self.reward_tracking_acc_err_opt = None
         self.reward_tracking_target_window = None
         
     def _infer_lift_configuration(self, state_dim):
@@ -907,10 +908,12 @@ class preceding_vehicle_spd_profile_generation():
         u = opti.variable(m, self.h - 1)
         rw = opti.variable(self.h)
         e_r = opti.variable(self.h)
+        e_acc = opti.variable(self.h - 1)
 
         # Initial condition
         opti.subject_to(x[:, 0] == casadi.DM(x0))
         opti.subject_to(e_r >= 0)
+        opti.subject_to(e_acc >= 0)
 
         cost = 0
         for i in range(1, self.h):
@@ -919,9 +922,9 @@ class preceding_vehicle_spd_profile_generation():
 
             # Add constraints on control input (assuming u[0] is acceleration)
             if a_max is not None:
-                opti.subject_to(u[0, i-1] <= a_max)
+                opti.subject_to(u[0, i-1] <= a_max + e_acc[i-1])
             if a_min is not None:
-                opti.subject_to(u[0, i-1] >= a_min)
+                opti.subject_to(u[0, i-1] >= a_min - e_acc[i-1])
 
             # Add rate limit on control input (delta u)
             if i == 1:
@@ -959,6 +962,7 @@ class preceding_vehicle_spd_profile_generation():
 
             # Relaxation margin to allow tracking feasibility
             cost += 1e6 * e_r[i]**2
+            cost += 1e8 * e_acc[i-1]**2
             opti.subject_to(rw[i] >= reward_target_i - e_r[i])
             opti.subject_to(rw[i] <= reward_target_i + e_r[i])
 
@@ -971,6 +975,7 @@ class preceding_vehicle_spd_profile_generation():
         self.reward_tracking_u_opt = sol.value(u)
         self.reward_tracking_rw_opt = sol.value(rw)
         self.reward_tracking_err_opt = sol.value(e_r)
+        self.reward_tracking_acc_err_opt = sol.value(e_acc)
         self.reward_tracking_target_window = reward_target_window
 
         return self.reward_tracking_x_opt, self.reward_tracking_u_opt, self.reward_tracking_rw_opt
