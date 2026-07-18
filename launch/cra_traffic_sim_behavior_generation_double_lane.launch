@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="pv_speed_profile" default="I85_nycccol.csv" />
+    <arg name="dir" default="0"/>
+    <arg name="use_preview" default="0"/>
+    <arg name="sim_run" default="1"/>
+    <arg name="site_map_0" default="custom_map_dir0.csv"/>
+    <arg name="site_map_1" default="custom_map_dir0.csv"/>
+    <arg name="koopman_lift_method" default="auto"/>
+    <arg name="front_vehicle_travel_distance" default="1000.0"/>
+    <arg name="front_vehicle_stop_distance_tolerance" default="0.5"/>
+    <arg name="front_vehicle_stop_speed_tolerance" default="0.1"/>
+    <arg name="front_vehicle_stop_buffer" default="2.0"/>
+    <arg name="front_vehicle_speed_limit" default="35.0"/>
+    <arg name="num_vehicles" default="5"/>
+    <arg name="side_lane_leader_distance_offset" default="1.0"/>
+    <arg name="side_lane_cbf_enable" default="true"/>
+    <arg name="side_lane_cbf_alpha" default="5.0"/>
+    <arg name="side_lane_cbf_s0" default="10.0"/>
+    <arg name="side_lane_cbf_T" default="2.0"/>
+    <arg name="side_lane_cbf_emergency_decel_margin" default="2.0"/>
+    <arg name="auto_behavior_generation_enable" default="true"/>
+    <arg name="human_intervention_acc_threshold" default="0.05"/>
+    <arg name="auto_behavior_generation_delay_min" default="5.0"/>
+    <arg name="auto_behavior_generation_delay_max" default="15.0"/>
+    <arg name="control_target_stale_timeout" default="1.0"/>
+    <arg name="auto_behavior_generation_random_seed" default="-1"/>
+
+    <param name="runDirection" value="$(arg dir)"/>
+    <param name="run_sim" value="$(arg sim_run)"/>
+    <param name="map_0" value="$(arg site_map_0)"/>
+    <param name="map_1" value="$(arg site_map_1)"/>
+    <param name="spd_map" value="$(arg pv_speed_profile)"/>
+    <param name="num_vehicles" value="$(arg num_vehicles)"/>
+    <param name="pv_states_dt" value="0.5"/>
+    <param name="use_preview" value="$(arg use_preview)"/>
+    <param name="koopman_lift_method" value="$(arg koopman_lift_method)"/>
+    <param name="side_lane_leader_distance_offset" value="$(arg side_lane_leader_distance_offset)"/>
+    <param name="front_vehicle_travel_distance" value="$(arg front_vehicle_travel_distance)"/>
+    <param name="front_vehicle_stop_distance_tolerance" value="$(arg front_vehicle_stop_distance_tolerance)"/>
+    <param name="front_vehicle_stop_speed_tolerance" value="$(arg front_vehicle_stop_speed_tolerance)"/>
+    <param name="front_vehicle_stop_buffer" value="$(arg front_vehicle_stop_buffer)"/>
+    <param name="front_vehicle_speed_limit" value="$(arg front_vehicle_speed_limit)"/>
+    <param name="side_lane_cbf_enable" value="$(arg side_lane_cbf_enable)"/>
+    <param name="side_lane_cbf_alpha" value="$(arg side_lane_cbf_alpha)"/>
+    <param name="side_lane_cbf_s0" value="$(arg side_lane_cbf_s0)"/>
+    <param name="side_lane_cbf_T" value="$(arg side_lane_cbf_T)"/>
+    <param name="side_lane_cbf_emergency_decel_margin" value="$(arg side_lane_cbf_emergency_decel_margin)"/>
+    <param name="auto_behavior_generation_enable" value="$(arg auto_behavior_generation_enable)"/>
+    <param name="human_intervention_acc_threshold" value="$(arg human_intervention_acc_threshold)"/>
+    <param name="auto_behavior_generation_delay_min" value="$(arg auto_behavior_generation_delay_min)"/>
+    <param name="auto_behavior_generation_delay_max" value="$(arg auto_behavior_generation_delay_max)"/>
+    <param name="control_target_stale_timeout" value="$(arg control_target_stale_timeout)"/>
+    <param name="auto_behavior_generation_random_seed" value="$(arg auto_behavior_generation_random_seed)"/>
+    <param name="track_style" value="Rally"/>
+    <node pkg="cra_traffic_sim" type="car_following_double_lane_behavior_generation.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
+    <node pkg="joy" type="joy_node" name="joy_node" output="screen" />
+    <group if="$(arg sim_run)">
+        <node pkg="cra_traffic_sim" type="anl_sim.py" name="anl_sim" output="screen" />
+    </group>
+
+    <include file="$(find hololens_ros_communication)/launch/hololens_sender.launch" />
+    <!-- <node pkg="low_level_bridge" name="bridge" type="bridge_KF_lanechange_MachE.py" output="screen"/> -->
+</launch>

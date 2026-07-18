@@ -437,6 +437,9 @@ class road_reader:
 
         return [traffic_x, traffic_y, traffic_z, traffic_yaw, traffic_pitch]
 
+    def find_traffic_vehicle_poses_single_lane(self, dist_travelled):
+        return self.find_traffic_vehicle_poses(dist_travelled, lane_id=0)
+
     def find_ego_vehicle_distance_reference(self, ego_poses):
         min_ref_coordinate_id, min_dist_to_map = self._nearest_map_index(
             ego_poses,
