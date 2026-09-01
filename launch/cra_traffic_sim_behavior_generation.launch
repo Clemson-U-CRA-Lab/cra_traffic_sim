@@ -27,6 +27,7 @@
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
+    <param name="use_acceleration_pitch" value="$(arg sim_run)"/>
     <param name="map" value="$(arg site_map)"/>
     <param name="spd_map" value="$(arg pv_speed_profile)"/>
     <param name="num_vehicles" value="$(arg num_vehicles)"/>

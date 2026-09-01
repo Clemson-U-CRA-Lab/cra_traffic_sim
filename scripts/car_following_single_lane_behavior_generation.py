@@ -431,6 +431,7 @@ def main_double_lane_behavior_generation():
     map_filename = rospy.get_param("/map")
     spd_filename = rospy.get_param("/spd_map")
     run_sim = get_bool_param("/run_sim", True)
+    use_acceleration_pitch = get_bool_param("/use_acceleration_pitch", run_sim)
     pv_dt = float(rospy.get_param("/pv_states_dt"))
     use_preview = get_bool_param("/use_preview", False)
     run_direction = rospy.get_param("/runDirection")
@@ -896,12 +897,15 @@ def main_double_lane_behavior_generation():
                         first_follower_id=2,
                     )
 
-                    ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
-                        pitch_max= 1.6 / RAD_TO_DEGREE,
-                        pitch_min= -2 / RAD_TO_DEGREE,
-                        acc_max=4.0,
-                        acc_min=-6.0,
-                    )
+                    if use_acceleration_pitch:
+                        ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
+                            pitch_max=1.6 / RAD_TO_DEGREE,
+                            pitch_min=-2 / RAD_TO_DEGREE,
+                            acc_max=4.0,
+                            acc_min=-6.0,
+                        )
+                    else:
+                        ego_vehicle_pitch_from_acceleration = 0.0
                     ego_vehicle_poses = [
                         traffic_manager.ego_x,
                         traffic_manager.ego_y,
