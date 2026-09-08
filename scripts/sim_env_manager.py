@@ -96,10 +96,19 @@ class CMI_traffic_sim:
 
         default_tracked_vehicle_ids = [0, 1]
         self.kalman_tracked_vehicle_ids = rospy.get_param("~kalman_tracked_vehicle_ids", default_tracked_vehicle_ids)
-        self.kalman_process_noise = np.diag(rospy.get_param("~kalman_process_noise_diag", [20.5, 25.0, 28.0]))
-        self.kalman_measurement_noise = np.diag(rospy.get_param("~kalman_measurement_noise_diag", [40.0, 20.0, 30.0]))
-        self.kalman_initial_covariance = np.diag(rospy.get_param("~kalman_initial_covariance_diag", [1.0, 1.0, 1.0]))
-        self.kalman_max_dt = float(rospy.get_param("~kalman_max_dt", 0.1))
+        # Longitudinal Kalman state is [s, v]. Acceleration is a measured
+        # control input, not an estimated state.
+        # Defaults assume approximately 1 m position error, 0.5 m/s speed
+        # error, and 0.5 m/s^2 acceleration-input error. The process-noise
+        # values are spectral densities because they are multiplied by dt.
+        process_noise_diag = rospy.get_param("~kalman_process_noise_diag", [0.1, 0.5])
+        measurement_noise_diag = rospy.get_param("~kalman_measurement_noise_diag", [1.0, 0.25])
+        initial_covariance_diag = rospy.get_param("~kalman_initial_covariance_diag", [4.0, 1.0])
+        self.kalman_process_noise = np.diag(process_noise_diag[:2])
+        self.kalman_measurement_noise = np.diag(measurement_noise_diag[:2])
+        self.kalman_initial_covariance = np.diag(initial_covariance_diag[:2])
+        self.kalman_acceleration_noise_variance = float(
+            rospy.get_param("~kalman_acceleration_noise_variance", 0.25))
         self.traffic_kalman_filters = [self._create_kalman_filter_state() for _ in range(max_num_vehicles)]
         
         if sil_simulation:
@@ -117,14 +126,16 @@ class CMI_traffic_sim:
     def _create_kalman_filter_state(self):
         return {
             'initialized': False,
-            'x': np.zeros((3, 1)),
+            'x': np.zeros((2, 1)),
+            'acceleration': 0.0,
             'P': self.kalman_initial_covariance.copy()
         }
 
     def reset_traffic_kalman_filter(self, vehicle_id, s_meas, v_meas, a_meas):
         kalman_filter = self.traffic_kalman_filters[vehicle_id]
         kalman_filter['initialized'] = True
-        kalman_filter['x'] = np.array([[s_meas], [v_meas], [a_meas]], dtype=float)
+        kalman_filter['x'] = np.array([[s_meas], [v_meas]], dtype=float)
+        kalman_filter['acceleration'] = float(a_meas)
         kalman_filter['P'] = self.kalman_initial_covariance.copy()
         self._write_kalman_state_to_traffic_arrays(vehicle_id)
 
@@ -132,7 +143,7 @@ class CMI_traffic_sim:
         kalman_filter = self.traffic_kalman_filters[vehicle_id]
         self.traffic_s[vehicle_id] = kalman_filter['x'][0, 0]
         self.traffic_v[vehicle_id] = max(kalman_filter['x'][1, 0], 0.0)
-        self.traffic_alon[vehicle_id] = kalman_filter['x'][2, 0]
+        self.traffic_alon[vehicle_id] = kalman_filter['acceleration']
 
     def predict_traffic_kalman_filter(self, vehicle_id, dt):
         kalman_filter = self.traffic_kalman_filters[vehicle_id]
@@ -140,17 +151,24 @@ class CMI_traffic_sim:
         if (not kalman_filter['initialized']) or dt <= 0.0:
             return
 
-        dt = min(dt, self.kalman_max_dt)
+        # This constant-acceleration input model is exact for any dt, so use
+        # the full elapsed interval instead of clipping dt and losing time.
         dt2 = dt ** 2
-
         A = np.array([
-            [1.0, dt, 0.5 * dt2],
-            [0.0, 1.0, dt],
-            [0.0, 0.0, 1.0]
+            [1.0, dt],
+            [0.0, 1.0]
         ])
-        Q = self.kalman_process_noise * max(dt, 1e-3)
+        B = np.array([
+            [0.5 * dt2],
+            [dt]
+        ])
 
-        kalman_filter['x'] = A @ kalman_filter['x']
+        # Base model uncertainty plus uncertainty from the measured
+        # acceleration input.
+        Q = (self.kalman_process_noise * max(dt, 1e-3) +
+             self.kalman_acceleration_noise_variance * (B @ B.T))
+
+        kalman_filter['x'] = A @ kalman_filter['x'] + B * kalman_filter['acceleration']
         kalman_filter['P'] = A @ kalman_filter['P'] @ A.T + Q
 
         if kalman_filter['x'][1, 0] < 0.0:
@@ -160,21 +178,26 @@ class CMI_traffic_sim:
 
     def correct_traffic_kalman_filter(self, vehicle_id, s_meas, v_meas, a_meas):
         kalman_filter = self.traffic_kalman_filters[vehicle_id]
+        kalman_filter['acceleration'] = float(a_meas)
 
         if not kalman_filter['initialized']:
             self.reset_traffic_kalman_filter(vehicle_id, s_meas, v_meas, a_meas)
             return
 
-        H = np.eye(3)
+        H = np.eye(2)
         R = self.kalman_measurement_noise
 
-        z = np.array([[s_meas], [v_meas], [a_meas]], dtype=float)
+        z = np.array([[s_meas], [v_meas]], dtype=float)
         innovation = z - H @ kalman_filter['x']
         S = H @ kalman_filter['P'] @ H.T + R
-        K = kalman_filter['P'] @ H.T @ np.linalg.inv(S)
+        K = np.linalg.solve(S, (kalman_filter['P'] @ H.T).T).T
 
         kalman_filter['x'] = kalman_filter['x'] + K @ innovation
-        kalman_filter['P'] = (np.eye(3) - K @ H) @ kalman_filter['P']
+        identity_minus_kh = np.eye(2) - K @ H
+        # Joseph form keeps P symmetric positive semidefinite in finite
+        # precision arithmetic.
+        kalman_filter['P'] = (identity_minus_kh @ kalman_filter['P'] @ identity_minus_kh.T +
+                              K @ R @ K.T)
 
         if kalman_filter['x'][1, 0] < 0.0:
             kalman_filter['x'][1, 0] = 0.0
