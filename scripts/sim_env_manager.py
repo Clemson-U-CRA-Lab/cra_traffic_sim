@@ -101,8 +101,8 @@ class CMI_traffic_sim:
         # Defaults assume approximately 1 m position error, 0.5 m/s speed
         # error, and 0.5 m/s^2 acceleration-input error. The process-noise
         # values are spectral densities because they are multiplied by dt.
-        process_noise_diag = rospy.get_param("~kalman_process_noise_diag", [0.1, 0.5])
-        measurement_noise_diag = rospy.get_param("~kalman_measurement_noise_diag", [1.0, 0.25])
+        process_noise_diag = rospy.get_param("~kalman_process_noise_diag", [1, 5])
+        measurement_noise_diag = rospy.get_param("~kalman_measurement_noise_diag", [10.0, 10.25])
         initial_covariance_diag = rospy.get_param("~kalman_initial_covariance_diag", [4.0, 1.0])
         self.kalman_process_noise = np.diag(process_noise_diag[:2])
         self.kalman_measurement_noise = np.diag(measurement_noise_diag[:2])
