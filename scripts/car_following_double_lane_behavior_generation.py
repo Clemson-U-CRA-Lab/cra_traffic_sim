@@ -397,19 +397,65 @@ def update_side_lane_idm_followers(
         traffic_manager.traffic_alon[vehicle_id] = next_a
 
 
-def sync_side_lane_leader_with_front_vehicle(
+def update_side_lane_leader_from_lane0_idm(
     traffic_manager,
-    leader_offset,
+    idm_control,
+    dt,
     num_vehicles,
-    ego_s_init_0,
-    ego_s_init_1,
+    virtual_front_offset,
+    side_lane_speed_limit,
+    side_lane_acc_min,
+    side_lane_acc_max,
+    side_lane_cbf_enable,
+    side_lane_cbf_alpha,
+    side_lane_cbf_s0,
+    side_lane_cbf_time_headway,
+    side_lane_cbf_emergency_decel_margin,
 ):
     if num_vehicles <= 1:
         return
-    lane_0_progress = traffic_manager.traffic_s[0] - ego_s_init_0
-    traffic_manager.traffic_s[1] = ego_s_init_1 + lane_0_progress + leader_offset
-    traffic_manager.traffic_v[1] = traffic_manager.traffic_v[0]
-    traffic_manager.traffic_alon[1] = traffic_manager.traffic_alon[0]
+
+    side_lane_effective_acc_min = (
+        side_lane_acc_min - side_lane_cbf_emergency_decel_margin
+        if side_lane_cbf_enable
+        else side_lane_acc_min
+    )
+    virtual_front_s = traffic_manager.traffic_s[0] + virtual_front_offset
+    idm_acc = idm_control.safe_IDM_acceleration(
+        front_v=traffic_manager.traffic_v[0],
+        ego_v=traffic_manager.traffic_v[1],
+        front_s=virtual_front_s,
+        ego_s=traffic_manager.traffic_s[1],
+        fallback_acc=side_lane_acc_min,
+    )
+    acc_t, _, _, _ = idm_control.CBF_acceleration_filter(
+        commanded_acc=idm_acc,
+        front_v=traffic_manager.traffic_v[0],
+        ego_v=traffic_manager.traffic_v[1],
+        front_s=virtual_front_s,
+        ego_s=traffic_manager.traffic_s[1],
+        acc_min=side_lane_acc_min,
+        acc_max=side_lane_acc_max,
+        cbf_enable=side_lane_cbf_enable,
+        cbf_alpha=side_lane_cbf_alpha,
+        cbf_s0=side_lane_cbf_s0,
+        cbf_T=side_lane_cbf_time_headway,
+        emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
+    )
+    if traffic_manager.traffic_v[1] <= 0.0 and acc_t < 0.0:
+        acc_t = 0.0
+    next_s, next_v, next_a = clamp_vehicle_state(
+        traffic_manager.traffic_s[1],
+        traffic_manager.traffic_v[1],
+        acc_t,
+        dt,
+        side_lane_speed_limit,
+        side_lane_effective_acc_min,
+        side_lane_acc_max,
+    )
+    traffic_manager.traffic_s[1] = next_s
+    traffic_manager.traffic_v[1] = next_v
+    traffic_manager.traffic_alon[1] = next_a
     traffic_manager.traffic_Sv_id[1] = 1
     traffic_manager.traffic_l[1] = 1
 
@@ -445,6 +491,10 @@ def main_double_lane_behavior_generation():
     run_direction = rospy.get_param("/runDirection")
     koopman_lift_method = rospy.get_param("/koopman_lift_method", "auto")
     side_lane_leader_distance_offset = max(float(rospy.get_param("/side_lane_leader_distance_offset", 12.0)), 0.0)
+    side_lane_leader_virtual_front_offset = max(
+        float(rospy.get_param("/side_lane_leader_virtual_front_offset", 20.0)),
+        0.0,
+    )
     side_lane_cbf_enable = get_bool_param("/side_lane_cbf_enable", True)
     side_lane_cbf_alpha = float(rospy.get_param("/side_lane_cbf_alpha", 8.0))
     side_lane_cbf_s0 = float(rospy.get_param("/side_lane_cbf_s0", 6.0))
@@ -904,12 +954,20 @@ def main_double_lane_behavior_generation():
                         stop_speed_tolerance=front_vehicle_stop_speed_tolerance,
                     )
 
-                    sync_side_lane_leader_with_front_vehicle(
+                    update_side_lane_leader_from_lane0_idm(
                         traffic_manager=traffic_manager,
-                        leader_offset=side_lane_leader_distance_offset,
+                        idm_control=idm_control,
+                        dt=Dt,
                         num_vehicles=num_Sv,
-                        ego_s_init_0=ego_s_init_0,
-                        ego_s_init_1=ego_s_init_1,
+                        virtual_front_offset=side_lane_leader_virtual_front_offset,
+                        side_lane_speed_limit=side_lane_speed_limit,
+                        side_lane_acc_min=side_lane_acc_min,
+                        side_lane_acc_max=side_lane_acc_max,
+                        side_lane_cbf_enable=side_lane_cbf_enable,
+                        side_lane_cbf_alpha=side_lane_cbf_alpha,
+                        side_lane_cbf_s0=side_lane_cbf_s0,
+                        side_lane_cbf_time_headway=side_lane_cbf_time_headway,
+                        side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
                     )
                     update_side_lane_idm_followers(
                         traffic_manager=traffic_manager,

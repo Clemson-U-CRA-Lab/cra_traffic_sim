@@ -14,6 +14,7 @@
     <arg name="front_vehicle_speed_limit" default="35.0"/>
     <arg name="num_vehicles" default="5"/>
     <arg name="side_lane_leader_distance_offset" default="1.0"/>
+    <arg name="side_lane_leader_virtual_front_offset" default="20.0"/>
     <arg name="side_lane_cbf_enable" default="true"/>
     <arg name="side_lane_cbf_alpha" default="5.0"/>
     <arg name="side_lane_cbf_s0" default="10.0"/>
@@ -37,6 +38,7 @@
     <param name="use_preview" value="$(arg use_preview)"/>
     <param name="koopman_lift_method" value="$(arg koopman_lift_method)"/>
     <param name="side_lane_leader_distance_offset" value="$(arg side_lane_leader_distance_offset)"/>
+    <param name="side_lane_leader_virtual_front_offset" value="$(arg side_lane_leader_virtual_front_offset)"/>
     <param name="front_vehicle_travel_distance" value="$(arg front_vehicle_travel_distance)"/>
     <param name="front_vehicle_stop_distance_tolerance" value="$(arg front_vehicle_stop_distance_tolerance)"/>
     <param name="front_vehicle_stop_speed_tolerance" value="$(arg front_vehicle_stop_speed_tolerance)"/>
