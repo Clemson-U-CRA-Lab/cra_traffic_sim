@@ -40,7 +40,9 @@ def get_single_lane_vehicle_spacing(traffic_manager, vehicle_id, default_spacing
     if (lead_s == 0.0 and ego_s == 0.0):
         return default_spacing
 
-    return max(lead_s - ego_s, 0.0)
+    # Preserve signed longitudinal distance so a vehicle that falls behind
+    # the ego is rendered behind it instead of being clamped to ego_s.
+    return lead_s - ego_s
 
 def main_single_lane_following():
     # Path Parameters
