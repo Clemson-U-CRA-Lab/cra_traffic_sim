@@ -19,47 +19,152 @@ import os
 import re
 import casadi
 from utils import *
-class stanley_vehicle_controller():
-    def __init__(self, x_init, y_init, z_init, yaw_init, pitch_init, car_length):
-        self.x = x_init
-        self.y = y_init
-        self.z = z_init
-        self.yaw = yaw_init
-        self.pitch = pitch_init
-        self.steering = 0.0
-        self.acc = 0.0
-        self.v = 0.0
-        self.L = car_length
-    
-    def update_vehicle_state(self, acc, z, pitch, dt):
-        self.x += self.v * math.cos(self.yaw) * dt
-        self.y += self.v * math.sin(self.yaw) * dt
-        self.yaw += self.v * math.tan(self.steering) / self.L * dt
-        self.v += self.acc * dt
+
+
+class TrafficVehicle:
+    """Traffic state, bounded controls, and planar bicycle motion.
+
+    Units are meters, seconds, and radians. ``speed`` is forward speed along
+    the vehicle heading; ``sv`` and ``lv`` are road-relative velocities.
+    ``l`` is lateral distance, not a lane ID. Callers select pursuit targets,
+    project global motion into Frenet coordinates, and set brake indication.
+    The scene manager is responsible for unique vehicle IDs.
+    """
+
+    def __init__(
+        self,
+        vehicle_id: int,
+        s: float = 0.0,
+        l: float = 0.0,
+        sv: float = 0.0,
+        lv: float = 0.0,
+        x: float = 0.0,
+        y: float = 0.0,
+        z: float = 0.0,
+        yaw: float = 0.0,
+        pitch: float = 0.0,
+        speed: float = 0.0,
+        brake_status: bool = False,
+        acceleration: float = 0.0,
+        steering: float = 0.0,
+        wheelbase: float = 3.5,
+        max_steering_angle: float = 0.5,
+        min_acceleration: float = -6.0,
+        max_acceleration: float = 4.0,
+    ):
+        self.vehicle_id = vehicle_id
+
+        # Frenet position and velocity, updated externally after global motion.
+        self.s = s
+        self.l = l
+        self.sv = sv
+        self.lv = lv
+
+        # Global pose and heading-aligned speed.
+        self.x = x
+        self.y = y
         self.z = z
+        self.yaw = yaw
         self.pitch = pitch
-        self.acc = acc
-    
-    def pure_pursuit_controller(self, goal_pose):
-        ego_pose = [self.x, self.y, self.z, self.yaw, self.pitch]
-        
-        local_veh_pose = host_vehicle_coordinate_transformation(goal_pose, ego_pose)
-        
-        l = (local_veh_pose[0] ** 2 + local_veh_pose[1] ** 2) ** 0.5
-        r = l ** 2 / (2 * local_veh_pose[1])
-        self.steering = np.clip(math.atan(6 / r), -0.5, 0.5)
-    
-    def get_traffic_pose(self):
+        self.speed = speed
+        self.brake_status = brake_status
+
+        # Control inputs, geometry, and limits.
+        self.acceleration = acceleration
+        self.steering = steering
+        self.wheelbase = wheelbase
+        self.max_steering_angle = max_steering_angle
+        self.min_acceleration = min_acceleration
+        self.max_acceleration = max_acceleration
+
+        if isinstance(self.vehicle_id, bool) or not isinstance(self.vehicle_id, int) or self.vehicle_id < 0:
+            raise ValueError("vehicle_id must be a nonnegative integer")
+        if not math.isfinite(self.speed) or self.speed < 0:
+            raise ValueError("speed must be finite and nonnegative")
+        if not math.isfinite(self.wheelbase) or self.wheelbase <= 0:
+            raise ValueError("wheelbase must be finite and positive")
+        if not math.isfinite(self.max_steering_angle) or not 0 < self.max_steering_angle < math.pi / 2:
+            raise ValueError("max_steering_angle must be between 0 and pi/2 radians")
+        if (not math.isfinite(self.min_acceleration)
+                or not math.isfinite(self.max_acceleration)
+                or not self.min_acceleration <= 0 <= self.max_acceleration
+                or self.min_acceleration >= self.max_acceleration):
+            raise ValueError("acceleration bounds must be finite, include zero, and have min < max")
+        if (not math.isfinite(self.acceleration)
+                or not self.min_acceleration <= self.acceleration <= self.max_acceleration):
+            raise ValueError("initial acceleration must be finite and within its bounds")
+        if not math.isfinite(self.steering) or abs(self.steering) > self.max_steering_angle:
+            raise ValueError("initial steering must be finite and within its bounds")
+
+    def assign_acceleration(self, value: float) -> float:
+        """Store and return a bounded longitudinal acceleration command."""
+        if not math.isfinite(value):
+            raise ValueError("acceleration must be finite")
+        self.acceleration = float(max(self.min_acceleration, min(self.max_acceleration, value)))
+        return self.acceleration
+
+    def compute_steering(self, goal_pose) -> float:
+        """Store and return pursuit steering for global [x, y, z, yaw, pitch]."""
+        try:
+            valid_target = len(goal_pose) == 5 and all(math.isfinite(value) for value in goal_pose)
+        except (TypeError, ValueError):
+            valid_target = False
+        if not valid_target:
+            raise ValueError("goal_pose must contain five finite numeric values")
+
+        dx = goal_pose[0] - self.x
+        dy = goal_pose[1] - self.y
+        local_x = dx * math.cos(self.yaw) + dy * math.sin(self.yaw)
+        local_y = -dx * math.sin(self.yaw) + dy * math.cos(self.yaw)
+        distance_squared = local_x ** 2 + local_y ** 2
+        if distance_squared <= 1e-12:
+            self.steering = 0.0
+        else:
+            angle = math.atan(2 * self.wheelbase * local_y / distance_squared)
+            self.steering = float(max(-self.max_steering_angle, min(self.max_steering_angle, angle)))
+        return self.steering
+
+    def step(self, dt: float, *, z=None, pitch=None):
+        """Advance global motion using stored commands; Frenet state is unchanged.
+
+        Direct control assignments are bounded here before integration. Height
+        and pitch are supplied by the caller when needed; reverse is disabled.
+        """
+        if not math.isfinite(dt) or dt <= 0:
+            raise ValueError("dt must be finite and positive")
+        if z is not None and not math.isfinite(z):
+            raise ValueError("z must be finite")
+        if pitch is not None and not math.isfinite(pitch):
+            raise ValueError("pitch must be finite")
+        if not math.isfinite(self.acceleration) or not math.isfinite(self.steering):
+            raise ValueError("control inputs must be finite")
+
+        # Compute the complete next state before mutating this vehicle.
+        acceleration = float(max(self.min_acceleration, min(self.max_acceleration, self.acceleration)))
+        steering = float(max(-self.max_steering_angle, min(self.max_steering_angle, self.steering)))
+        next_x = self.x + self.speed * math.cos(self.yaw) * dt
+        next_y = self.y + self.speed * math.sin(self.yaw) * dt
+        next_yaw = self.yaw + self.speed * math.tan(steering) / self.wheelbase * dt
+        next_speed = max(0.0, self.speed + acceleration * dt)
+
+        self.acceleration = acceleration
+        self.steering = steering
+        self.x, self.y, self.yaw, self.speed = next_x, next_y, next_yaw, next_speed
+        if z is not None:
+            self.z = z
+        if pitch is not None:
+            self.pitch = pitch
+
+    def get_pose(self) -> list:
+        """Return the global pose in the map-query interface's field order."""
         return [self.x, self.y, self.z, self.yaw, self.pitch]
-    
+
+
 class CMI_traffic_sim:
     def __init__(self, max_num_vehicles, num_vehicles, sil_simulation):
         self.serial_id = 0
         self.traffic_s = [0.0]*max_num_vehicles
         self.traffic_l = [0.0]*max_num_vehicles
-        self.traffic_x = [0.0]*max_num_vehicles
-        self.traffic_y = [0.0]*max_num_vehicles
-        self.traffic_z = [0.0]*max_num_vehicles
         self.traffic_yaw = [0.0]*max_num_vehicles
         self.traffic_pitch = [0.0]*max_num_vehicles
         self.traffic_alon = [0.0]*max_num_vehicles
@@ -168,13 +273,6 @@ class CMI_traffic_sim:
         self.traffic_v[vehicle_id] = initial_speed
         self.traffic_alon[vehicle_id] = initial_acceleration
         self.traffic_brake_status[vehicle_id] = initial_acceleration <= 0.0
-    
-    def global_vehicle_update(self, veh_ID, x, y, z, yaw, pitch):
-        self.traffic_x[veh_ID] = x
-        self.traffic_y[veh_ID] = y
-        self.traffic_z[veh_ID] = z
-        self.traffic_yaw[veh_ID] = yaw
-        self.traffic_pitch[veh_ID] = pitch
 
     def traffic_update(self, dt, a, v_tgt, vehicle_id):
         # Update velocity to match speed profile
