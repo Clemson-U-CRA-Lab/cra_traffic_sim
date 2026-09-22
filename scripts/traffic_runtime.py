@@ -94,42 +94,176 @@ def update_idm_followers(
     cbf_s0=6.0,
     cbf_time_headway=0.5,
     emergency_decel_margin=2.0,
+    leader_ids=None,
 ):
     """Advance followers using bounded IDM with an optional CBF safety filter."""
     for vehicle_id in range(first_follower_id, num_vehicles):
-        leader_id = vehicle_id - 1
-        commanded_acc = idm_control.safe_IDM_acceleration(
-            front_v=traffic_manager.traffic_v[leader_id],
-            ego_v=traffic_manager.traffic_v[vehicle_id],
-            front_s=traffic_manager.traffic_s[leader_id],
-            ego_s=traffic_manager.traffic_s[vehicle_id],
-            fallback_acc=acc_min,
-        )
-        commanded_acc, _, _, _ = idm_control.CBF_acceleration_filter(
-            commanded_acc=commanded_acc,
-            front_v=traffic_manager.traffic_v[leader_id],
-            ego_v=traffic_manager.traffic_v[vehicle_id],
-            front_s=traffic_manager.traffic_s[leader_id],
-            ego_s=traffic_manager.traffic_s[vehicle_id],
+        leader_id = (leader_ids or {}).get(vehicle_id, vehicle_id - 1)
+        update_vehicle_following(
+            traffic_manager=traffic_manager,
+            idm_control=idm_control,
+            vehicle_id=vehicle_id,
+            leader_id=leader_id,
+            dt=dt,
+            speed_limit=speed_limit,
             acc_min=acc_min,
             acc_max=acc_max,
             cbf_enable=cbf_enable,
             cbf_alpha=cbf_alpha,
             cbf_s0=cbf_s0,
-            cbf_T=cbf_time_headway,
+            cbf_time_headway=cbf_time_headway,
             emergency_decel_margin=emergency_decel_margin,
         )
-        if traffic_manager.traffic_v[vehicle_id] <= 0.0 and commanded_acc < 0.0:
-            commanded_acc = 0.0
-        position, speed, acceleration = clamp_vehicle_state(
-            traffic_manager.traffic_s[vehicle_id],
-            traffic_manager.traffic_v[vehicle_id],
-            commanded_acc,
-            dt,
-            speed_limit,
-            acc_min,
-            acc_max,
-        )
-        traffic_manager.traffic_s[vehicle_id] = position
-        traffic_manager.traffic_v[vehicle_id] = speed
-        traffic_manager.traffic_alon[vehicle_id] = acceleration
+
+
+def update_vehicle_following(
+    traffic_manager,
+    idm_control,
+    vehicle_id,
+    leader_id,
+    dt,
+    speed_limit,
+    acc_min,
+    acc_max,
+    cbf_enable=True,
+    cbf_alpha=8.0,
+    cbf_s0=6.0,
+    cbf_time_headway=0.5,
+    emergency_decel_margin=2.0,
+):
+    """Advance one vehicle against an explicitly selected longitudinal leader."""
+    commanded_acc = compute_vehicle_following_acceleration(
+        traffic_manager=traffic_manager,
+        idm_control=idm_control,
+        vehicle_id=vehicle_id,
+        leader_id=leader_id,
+        acc_min=acc_min,
+        acc_max=acc_max,
+        cbf_enable=cbf_enable,
+        cbf_alpha=cbf_alpha,
+        cbf_s0=cbf_s0,
+        cbf_time_headway=cbf_time_headway,
+        emergency_decel_margin=emergency_decel_margin,
+    )
+    if traffic_manager.traffic_v[vehicle_id] <= 0.0 and commanded_acc < 0.0:
+        commanded_acc = 0.0
+    position, speed, acceleration = clamp_vehicle_state(
+        traffic_manager.traffic_s[vehicle_id],
+        traffic_manager.traffic_v[vehicle_id],
+        commanded_acc,
+        dt,
+        speed_limit,
+        acc_min,
+        acc_max,
+    )
+    traffic_manager.traffic_s[vehicle_id] = position
+    traffic_manager.traffic_v[vehicle_id] = speed
+    traffic_manager.traffic_alon[vehicle_id] = acceleration
+
+
+def compute_vehicle_following_acceleration(
+    traffic_manager,
+    idm_control,
+    vehicle_id,
+    leader_id,
+    acc_min,
+    acc_max,
+    cbf_enable=True,
+    cbf_alpha=8.0,
+    cbf_s0=6.0,
+    cbf_time_headway=0.5,
+    emergency_decel_margin=2.0,
+):
+    """Return bounded IDM/CBF acceleration without integrating the vehicle."""
+    commanded_acc = idm_control.safe_IDM_acceleration(
+        front_v=traffic_manager.traffic_v[leader_id],
+        ego_v=traffic_manager.traffic_v[vehicle_id],
+        front_s=traffic_manager.traffic_s[leader_id],
+        ego_s=traffic_manager.traffic_s[vehicle_id],
+        fallback_acc=acc_min,
+    )
+    commanded_acc, _, _, _ = idm_control.CBF_acceleration_filter(
+        commanded_acc=commanded_acc,
+        front_v=traffic_manager.traffic_v[leader_id],
+        ego_v=traffic_manager.traffic_v[vehicle_id],
+        front_s=traffic_manager.traffic_s[leader_id],
+        ego_s=traffic_manager.traffic_s[vehicle_id],
+        acc_min=acc_min,
+        acc_max=acc_max,
+        cbf_enable=cbf_enable,
+        cbf_alpha=cbf_alpha,
+        cbf_s0=cbf_s0,
+        cbf_T=cbf_time_headway,
+        emergency_decel_margin=emergency_decel_margin,
+    )
+    return float(np.clip(commanded_acc, acc_min, acc_max))
+
+
+def update_vehicle_against_stationary(
+    traffic_manager,
+    idm_control,
+    vehicle_id,
+    stationary_s,
+    dt,
+    speed_limit,
+    acc_min,
+    acc_max,
+    cbf_s0=6.0,
+    cbf_time_headway=0.5,
+    cbf_alpha=8.0,
+    emergency_decel_margin=2.0,
+    detection_buffer=2.0,
+):
+    """Use a stationary vehicle as leader once it enters the stopping envelope."""
+    ego_s = float(traffic_manager.traffic_s[vehicle_id])
+    ego_v = max(float(traffic_manager.traffic_v[vehicle_id]), 0.0)
+    gap = float(stationary_s) - ego_s
+    max_deceleration = max(abs(float(acc_min)), 1e-3)
+    stopping_distance = ego_v ** 2 / (2.0 * max_deceleration)
+    time_headway_distance = max(float(cbf_s0), 0.0) + max(float(cbf_time_headway), 0.0) * ego_v
+    detection_distance = max(stopping_distance, time_headway_distance) + max(float(detection_buffer), 0.0)
+
+    if gap > detection_distance:
+        return False
+
+    commanded_acc = idm_control.safe_IDM_acceleration(
+        front_v=0.0,
+        ego_v=ego_v,
+        front_s=stationary_s,
+        ego_s=ego_s,
+        fallback_acc=acc_min,
+    )
+    commanded_acc, _, _, _ = idm_control.CBF_acceleration_filter(
+        commanded_acc=commanded_acc,
+        front_v=0.0,
+        ego_v=ego_v,
+        front_s=stationary_s,
+        ego_s=ego_s,
+        acc_min=acc_min,
+        acc_max=acc_max,
+        cbf_enable=True,
+        cbf_alpha=cbf_alpha,
+        cbf_s0=cbf_s0,
+        cbf_T=cbf_time_headway,
+        emergency_decel_margin=emergency_decel_margin,
+    )
+    next_s, next_v, next_a = clamp_vehicle_state(
+        ego_s,
+        ego_v,
+        commanded_acc,
+        dt,
+        speed_limit,
+        acc_min,
+        acc_max,
+    )
+
+    clearance = max(float(cbf_s0), 0.0)
+    if next_s >= float(stationary_s) - clearance:
+        next_s = min(next_s, float(stationary_s) - clearance)
+        next_v = 0.0
+        next_a = acc_min
+
+    traffic_manager.traffic_s[vehicle_id] = next_s
+    traffic_manager.traffic_v[vehicle_id] = next_v
+    traffic_manager.traffic_alon[vehicle_id] = next_a
+    return True

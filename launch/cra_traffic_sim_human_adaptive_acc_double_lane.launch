@@ -5,6 +5,9 @@
     <arg name="use_preview" default="1"/>
     <arg name="sim_run" default="0"/>
     <arg name="site_map" default="custom_map_dir0.csv"/>
+    <arg name="stationary_side_vehicle_distance" default="120.0"/>
+    <arg name="side_lane_stationary_safety_buffer" default="3.0"/>
+    <arg name="side_lane_change_duration" default="4.0"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
@@ -13,6 +16,9 @@
     <param name="num_vehicles" value="5"/>
     <param name="pv_states_dt" value="0.5"/>
     <param name="use_preview" value="$(arg use_preview)"/>
+    <param name="stationary_side_vehicle_distance" value="$(arg stationary_side_vehicle_distance)"/>
+    <param name="side_lane_stationary_safety_buffer" value="$(arg side_lane_stationary_safety_buffer)"/>
+    <param name="side_lane_change_duration" value="$(arg side_lane_change_duration)"/>
     <param name="track_style" value="Rally"/>
     <node pkg="cra_traffic_sim" type="car_following_double_lane.py" name="CRA_Digital_Twin_Traffic" output="screen"/>
     <node pkg="joy" type="joy_node" name="joy_node" output="screen" />
