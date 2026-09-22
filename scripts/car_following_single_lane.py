@@ -174,6 +174,7 @@ def main_single_lane_following():
                     traffic_manager.traffic_brake_status_update(vehicle_id)
                     hololens_manager.update_virtual_vehicle_state(
                         vehicle_id=vehicle_id,
+                        vehicle_type=traffic_manager.traffic_type[vehicle_id],
                         x=local_pose[0],
                         y=-local_pose[1],
                         z=local_pose[2],
@@ -199,6 +200,7 @@ def main_single_lane_following():
                     local_pose = host_vehicle_coordinate_transformation(vehicle_pose, ego_vehicle)
                     hololens_manager.update_virtual_vehicle_state(
                         vehicle_id=vehicle_id,
+                        vehicle_type=traffic_manager.traffic_type[vehicle_id],
                         x=local_pose[0],
                         y=-local_pose[1],
                         z=local_pose[2],

@@ -13,7 +13,7 @@
     <param name="run_sim" value="$(arg sim_run)"/>
     <param name="map" value="$(arg site_map)"/>
     <param name="spd_map" value="$(arg pv_speed_profile)"/>
-    <param name="num_vehicles" value="5"/>
+    <param name="num_vehicles" value="3"/>
     <param name="pv_states_dt" value="0.5"/>
     <param name="use_preview" value="$(arg use_preview)"/>
     <param name="stationary_side_vehicle_distance" value="$(arg stationary_side_vehicle_distance)"/>

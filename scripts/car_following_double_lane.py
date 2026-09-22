@@ -145,6 +145,7 @@ def main_double_lane_following():
                     0,
                     initial_speed=initial_speed,
                     initial_acceleration=0.0,
+                    vehicle_type=0,
                 )
                 for vehicle_id in range(1, moving_vehicle_count):
                     side_lane_s = (
@@ -160,6 +161,7 @@ def main_double_lane_following():
                         0,
                         initial_speed=initial_speed,
                         initial_acceleration=0.0,
+                        vehicle_type=0,
                     )
                 stationary_vehicle_s = (
                     traffic_manager.traffic_s[0]
@@ -174,6 +176,7 @@ def main_double_lane_following():
                     0,
                     initial_speed=0.0,
                     initial_acceleration=0.0,
+                    vehicle_type=1,
                 )
                 ego_s_init = ego_s
                 continue
@@ -366,6 +369,7 @@ def main_double_lane_following():
                         traffic_manager.traffic_brake_status_update(vehicle_id)
                     hololens_manager.update_virtual_vehicle_state(
                         vehicle_id=vehicle_id,
+                        vehicle_type=traffic_manager.traffic_type[vehicle_id],
                         x=local_pose[0],
                         y=-local_pose[1],
                         z=local_pose[2],
@@ -395,6 +399,7 @@ def main_double_lane_following():
                     local_pose = host_vehicle_coordinate_transformation(vehicle_pose, ego_vehicle)
                     hololens_manager.update_virtual_vehicle_state(
                         vehicle_id=vehicle_id,
+                        vehicle_type=traffic_manager.traffic_type[vehicle_id],
                         x=local_pose[0],
                         y=-local_pose[1],
                         z=local_pose[2],

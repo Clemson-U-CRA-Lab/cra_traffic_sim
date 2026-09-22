@@ -65,6 +65,7 @@ class CMI_traffic_sim:
         self.traffic_omega = [0.0]*max_num_vehicles
         self.traffic_brake_status = [False]*max_num_vehicles
         self.traffic_Sv_id = [0]*max_num_vehicles
+        self.traffic_type = [0]*max_num_vehicles
         self.traffic_num_vehicles = num_vehicles
         self.traffic_info_msg = traffic_info()
         self.vehicle_traj_msg = vehicle_traj_seq()
@@ -146,9 +147,11 @@ class CMI_traffic_sim:
         vehicle_id_in_lane,
         initial_speed=0.0,
         initial_acceleration=0.0,
+        vehicle_type=0,
     ):
         self.traffic_s[vehicle_id] = s_ego + ds * (vehicle_id_in_lane + 1)
         self.traffic_Sv_id[vehicle_id] = vehicle_id
+        self.traffic_type[vehicle_id] = vehicle_type
         self.traffic_l[vehicle_id] = line_number
         self.traffic_v[vehicle_id] = initial_speed
         self.traffic_alon[vehicle_id] = initial_acceleration
@@ -247,6 +250,7 @@ class CMI_traffic_sim:
         self.traffic_info_msg.num_SVs_x = self.traffic_num_vehicles
         self.traffic_info_msg.sim_T = sim_t
         self.traffic_info_msg.virtual_vehicle_id = self.traffic_Sv_id
+        self.traffic_info_msg.S_v_type = self.traffic_type
         self.traffic_info_msg.S_v_s = self.traffic_s
         self.traffic_info_msg.S_v_l = self.traffic_l
         self.traffic_info_msg.S_v_sv = self.traffic_v
@@ -524,6 +528,7 @@ class hololens_message_manager():
         self.num_SVs_x = num_vehicles
         self.num_TL = num_traffic_lights
         self.virtual_vehicle_id = [0] * max_num_vehicles
+        self.S_v_type = [0] * max_num_vehicles
         self.S_v_x = [0.0] * max_num_vehicles
         self.S_v_y = [0.0] * max_num_vehicles
         self.S_v_z = [0.0] * max_num_vehicles
@@ -558,8 +563,9 @@ class hololens_message_manager():
         self.pub_virtual_traffic_info = rospy.Publisher(
             '/virtual_sim_info_mache', hololens_info, queue_size=1)
     
-    def update_virtual_vehicle_state(self, vehicle_id, x, y, z, pitch, yaw, acc, vx, vy, brake_status):
+    def update_virtual_vehicle_state(self, vehicle_id, x, y, z, pitch, yaw, acc, vx, vy, brake_status, vehicle_type=0):
         self.virtual_vehicle_id[vehicle_id] = vehicle_id
+        self.S_v_type[vehicle_id] = vehicle_type
         self.S_v_x[vehicle_id] = x
         self.S_v_y[vehicle_id] = y
         self.S_v_z[vehicle_id] = z
@@ -589,6 +595,7 @@ class hololens_message_manager():
 
         for i in range(self.hololens_message.num_SVs_x):
             self.hololens_message.virtual_vehicle_id[i] = self.virtual_vehicle_id[i]
+            self.hololens_message.S_v_type[i] = self.S_v_type[i]
             self.hololens_message.S_v_x[i] = self.S_v_x[i]
             self.hololens_message.S_v_y[i] = self.S_v_y[i]
             self.hololens_message.S_v_z[i] = self.S_v_z[i]

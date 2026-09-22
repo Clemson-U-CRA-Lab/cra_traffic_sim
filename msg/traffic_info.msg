@@ -3,6 +3,7 @@ float64 sim_T # Simulation duration
 
 int32 num_SVs_x # Number of traffic vehicles in the simulation
 int32[12] virtual_vehicle_id # ID of traffic vehicles
+int32[12] S_v_type # Traffic vehicle type code (0 = unspecified)
 
 float64[12] S_v_s # Traffic vehicles position in longitudinal direction
 float64[12] S_v_l # Traffic vehicles position in lateral direction
