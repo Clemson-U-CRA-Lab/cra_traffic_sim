@@ -8,13 +8,14 @@ import rospy
 from hololens_ros_communication.msg import ref_traj_correction
 from std_msgs.msg import Int8
 
+from double_lane_scenario import DoubleLaneScenario, ScenarioSession, LaneMapGeometry
+
 from sim_env_manager import CMI_traffic_sim, hololens_message_manager, road_reader
 from traffic_runtime import (
     build_front_preview,
     cycle_reference,
     get_bool_param,
     update_idm_followers,
-    update_vehicle_following,
     compute_vehicle_following_acceleration,
     update_vehicle_against_stationary,
 )
@@ -37,20 +38,26 @@ def road_reference_correction_msg_prep(ego_pitch):
 
 def main_double_lane_following():
     package_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-    moving_vehicle_count = int(rospy.get_param("/num_vehicles"))
-    if moving_vehicle_count < 2:
-        raise ValueError("Double-lane simulation requires at least a front vehicle and a side-lane leader.")
-    if moving_vehicle_count + 1 > 12:
-        raise ValueError("Double-lane simulation supports at most 11 moving vehicles plus the stationary vehicle.")
-    stationary_vehicle_id = moving_vehicle_count
-    num_vehicles = moving_vehicle_count + 1
-    stationary_vehicle_distance = max(
-        float(rospy.get_param("/stationary_side_vehicle_distance", 120.0)),
-        0.0,
-    )
+    rospy.init_node("CRA_Digital_Twin_Traffic")
+    scenario_file = os.path.expanduser(rospy.get_param(
+        "~scenario_file", os.path.join(package_dir, "config", "double_lane_scenario.json")
+    ))
+    if not os.path.isabs(scenario_file):
+        scenario_file = os.path.join(package_dir, scenario_file)
+    try:
+        scenario = DoubleLaneScenario.load(scenario_file)
+    except ValueError as error:
+        rospy.logfatal("%s", error)
+        return
+    num_vehicles = len(scenario.vehicles)
+    stationary_vehicle_id = scenario.stationary_id
+    moving_vehicle_count = stationary_vehicle_id
+    rospy.loginfo("Initial lane ordering (rear to front): %s; predecessors: %s; ego leader: %s",
+                  scenario.lane_order, scenario.predecessors, scenario.ego_leader)
     track_style = rospy.get_param("/track_style", "Rally")
     closed_track = track_style == "GrandPrix"
-    map_file = os.path.join(package_dir, "maps", rospy.get_param("/map"))
+    map_files = [os.path.join(package_dir, "maps", rospy.get_param(name))
+                 for name in ("/map_0", "/map_1")]
     speed_profile_file = os.path.join(package_dir, "speed_profile", rospy.get_param("/spd_map"))
     run_sim = get_bool_param(rospy, "/run_sim", False)
     preview_dt = float(rospy.get_param("/pv_states_dt", 0.5))
@@ -58,18 +65,23 @@ def main_double_lane_following():
     run_direction = int(rospy.get_param("/runDirection", 0))
     use_acceleration_pitch = get_bool_param(rospy, "/use_acceleration_pitch", run_sim)
 
-    rospy.init_node("CRA_Digital_Twin_Traffic")
     rate = rospy.Rate(100)
     traffic_manager = CMI_traffic_sim(12, num_vehicles, sil_simulation=run_sim)
+    # Load metadata now; positioned messages wait for a valid ego pose.
+    scenario.initialize(traffic_manager, 0.0)
     hololens_manager = hololens_message_manager(
         num_vehicles=num_vehicles,
         max_num_vehicles=200,
         max_num_traffic_lights=12,
         num_traffic_lights=0,
     )
-    traffic_map = road_reader(map_file, speed_profile_file, closed_track=closed_track)
+    lane_maps = [road_reader(filename, speed_profile_file, closed_track=closed_track)
+                 for filename in map_files]
+    geometry = LaneMapGeometry(lane_maps)
+    traffic_map = lane_maps[0]  # Ego reference, driving cycle, and target lane.
+    for lane_map in lane_maps:
+        lane_map.read_map_data()
     idm = IDM(a=4, b=6, s0=6, v0=35, T=0.8)
-    traffic_map.read_map_data()
     traffic_map.read_speed_profile()
 
     direction_pub = rospy.Publisher("/runDirection", Int8, queue_size=2)
@@ -78,10 +90,9 @@ def main_double_lane_following():
 
     message_id = 0
     sim_t = 0.0
-    previous_time = time.time()
     ego_s_init = 0.0
-    initial_gap = 8.0
-    leader_offset = max(float(rospy.get_param("/side_lane_leader_distance_offset", 10.0)), 0.0)
+    initial_gap = scenario.front_gap
+    leader_offset = scenario.leader_offset
     speed_limit = float(rospy.get_param("/front_vehicle_speed_limit", 35.0)) * 0.44704
     side_speed_limit = float(rospy.get_param("/side_lane_speed_limit", speed_limit))
     front_acc_min = float(rospy.get_param("/front_vehicle_acceleration_lower_limit", -6.0))
@@ -106,12 +117,33 @@ def main_double_lane_following():
     lane_change_active = False
     lane_change_controller = None
     ego_pitch = 0.0
-    stationary_vehicle_s = None
+    initial_speed, initial_profile_distance, _ = traffic_map.find_speed_profile_information(sim_t=0.0)
+    session = ScenarioSession(scenario, float(np.clip(initial_speed, 0.0, speed_limit)))
+    front_s = [0.0] * 40
+    front_v = [0.0] * 40
+    front_a = [0.0] * 40
 
     while not rospy.is_shutdown():
         try:
-            dt = max(time.time() - previous_time, 0.0)
-            previous_time = time.time()
+            # Snapshot the joystick request so a callback cannot split an update.
+            requested_start = traffic_manager.sim_start
+            pose_ready = traffic_manager.ego_pose_received
+            ego_s = 0.0
+            if pose_ready:
+                ego_s, _, _ = traffic_map.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
+                pose_ready = bool(np.isfinite(ego_s))
+                if pose_ready and not session.started:
+                    pose_ready = geometry.align_to_ego(traffic_manager.ego_pose_ref, ego_s)
+            dt = session.update(traffic_manager, ego_s, pose_ready, requested_start, time.monotonic())
+            if not session.ready:
+                rospy.logwarn_throttle(5.0, "Waiting for a valid ego pose on both maps before publishing the traffic scene")
+                rate.sleep()
+                continue
+            sim_t = session.sim_t
+            stationary_vehicle_s = traffic_manager.traffic_s[stationary_vehicle_id]
+            if session.started:
+                # Shared cycle/preview helpers add the raw profile distance.
+                ego_s_init = session.anchor_s - initial_profile_distance
             traffic_manager.serial_id = message_id
             hololens_manager.update_ego_state(
                 serial_id=message_id,
@@ -125,65 +157,13 @@ def main_double_lane_following():
                 ego_omega=traffic_manager.ego_omega,
             )
 
-            ego_s, _, _ = traffic_map.find_ego_vehicle_distance_reference(traffic_manager.ego_pose_ref)
-            ego_reference = traffic_map.find_traffic_vehicle_poses(ego_s, lane_id=0)
-            front_s = [0.0] * 40
-            front_v = [0.0] * 40
-            front_a = [0.0] * 40
+            ego_reference = geometry.pose(ego_s, lane_id=0)
             lane_change_pose = None
             direction_pub.publish(Int8(data=run_direction))
             heartbeat_pub.publish(Int8(data=1))
 
-            if sim_t < 0.5 and traffic_manager.sim_start:
-                sim_t += dt
-                initial_speed, _, _ = traffic_map.find_speed_profile_information(sim_t=0.0)
-                traffic_manager.traffic_initialization(
-                    ego_s,
-                    initial_gap,
-                    0,
-                    0,
-                    0,
-                    initial_speed=initial_speed,
-                    initial_acceleration=0.0,
-                    vehicle_type=0,
-                )
-                for vehicle_id in range(1, moving_vehicle_count):
-                    side_lane_s = (
-                        traffic_manager.traffic_s[0]
-                        + leader_offset
-                        - initial_gap * (vehicle_id - 1)
-                    )
-                    traffic_manager.traffic_initialization(
-                        side_lane_s,
-                        0.0,
-                        1,
-                        vehicle_id,
-                        0,
-                        initial_speed=initial_speed,
-                        initial_acceleration=0.0,
-                        vehicle_type=0,
-                    )
-                stationary_vehicle_s = (
-                    traffic_manager.traffic_s[0]
-                    + leader_offset
-                    + stationary_vehicle_distance
-                )
-                traffic_manager.traffic_initialization(
-                    stationary_vehicle_s,
-                    0.0,
-                    1,
-                    stationary_vehicle_id,
-                    0,
-                    initial_speed=0.0,
-                    initial_acceleration=0.0,
-                    vehicle_type=1,
-                )
-                ego_s_init = ego_s
-                continue
-
             message_id += 1
-            if traffic_manager.sim_start:
-                sim_t += dt
+            if session.running:
                 cycle = cycle_reference(traffic_map, sim_t, ego_s_init, initial_gap)
                 cycle["speed"] = float(np.clip(cycle["speed"], 0.0, speed_limit))
                 cycle["acceleration"] = float(np.clip(cycle["acceleration"], front_acc_min, front_acc_max))
@@ -231,7 +211,7 @@ def main_double_lane_following():
                         and obstacle_following
                     ):
                         if not lane_change_active:
-                            side_pose = traffic_map.find_traffic_vehicle_poses(
+                            side_pose = geometry.pose(
                                 traffic_manager.traffic_s[lane_change_vehicle_id],
                                 lane_id=1,
                             )
@@ -268,7 +248,7 @@ def main_double_lane_following():
                             6.0,
                             traffic_manager.traffic_v[lane_change_vehicle_id] * 0.6,
                         )
-                        lane_change_goal = traffic_map.find_traffic_vehicle_poses(
+                        lane_change_goal = geometry.pose(
                             lane_change_goal_s,
                             lane_id=0,
                         )
@@ -334,86 +314,59 @@ def main_double_lane_following():
                 else:
                     ego_pitch = 0.0
 
-                ego_vehicle = [
-                    traffic_manager.ego_x,
-                    traffic_manager.ego_y,
-                    ego_reference[2],
-                    traffic_manager.ego_yaw,
-                    ego_reference[4],
-                ]
-                _, yaw_s, longitudinal_speed, lateral_speed = traffic_map.find_ego_frenet_pose(
-                    traffic_manager.ego_pose_ref,
-                    ego_vehicle[3],
-                    traffic_manager.ego_v_north,
-                    traffic_manager.ego_v_east,
-                )
-                traffic_manager.ego_vehicle_frenet_update(
-                    s=ego_s,
-                    l=0.0,
-                    sv=longitudinal_speed,
-                    lv=lateral_speed,
-                    yaw_s=yaw_s,
-                )
-                for vehicle_id in range(num_vehicles):
-                    lane_id = traffic_manager.traffic_l[vehicle_id]
-                    if vehicle_id == lane_change_vehicle_id and lane_change_controller is not None:
-                        vehicle_pose = lane_change_controller.get_traffic_pose()
-                    else:
-                        vehicle_pose = traffic_map.find_traffic_vehicle_poses(
-                            traffic_manager.traffic_s[vehicle_id], lane_id=lane_id
-                        )
-                    local_pose = host_vehicle_coordinate_transformation(vehicle_pose, ego_vehicle)
-                    if vehicle_id == stationary_vehicle_id:
-                        traffic_manager.traffic_brake_status[vehicle_id] = True
-                    else:
-                        traffic_manager.traffic_brake_status_update(vehicle_id)
-                    hololens_manager.update_virtual_vehicle_state(
-                        vehicle_id=vehicle_id,
-                        vehicle_type=traffic_manager.traffic_type[vehicle_id],
-                        x=local_pose[0],
-                        y=-local_pose[1],
-                        z=local_pose[2],
-                        yaw=-local_pose[3],
-                        pitch=-local_pose[4],
-                        acc=traffic_manager.traffic_alon[vehicle_id],
-                        vx=traffic_manager.traffic_v[vehicle_id],
-                        vy=0.0,
-                        brake_status=traffic_manager.traffic_brake_status[vehicle_id],
+            ego_vehicle = [
+                traffic_manager.ego_x,
+                traffic_manager.ego_y,
+                ego_reference[2],
+                traffic_manager.ego_yaw,
+                ego_reference[4],
+            ]
+            _, yaw_s, longitudinal_speed, lateral_speed = traffic_map.find_ego_frenet_pose(
+                traffic_manager.ego_pose_ref,
+                ego_vehicle[3],
+                traffic_manager.ego_v_north,
+                traffic_manager.ego_v_east,
+            )
+            traffic_manager.ego_vehicle_frenet_update(
+                s=ego_s,
+                l=0.0,
+                sv=longitudinal_speed,
+                lv=lateral_speed,
+                yaw_s=yaw_s,
+            )
+            for vehicle_id in range(num_vehicles):
+                lane_id = traffic_manager.traffic_l[vehicle_id]
+                if vehicle_id == lane_change_vehicle_id and lane_change_controller is not None:
+                    vehicle_pose = lane_change_controller.get_traffic_pose()
+                else:
+                    vehicle_pose = geometry.pose(
+                        traffic_manager.traffic_s[vehicle_id], lane_id=lane_id
                     )
-            else:
-                for vehicle_id in range(num_vehicles):
-                    lane_id = traffic_manager.traffic_l[vehicle_id]
-                    if vehicle_id == lane_change_vehicle_id and lane_change_controller is not None:
-                        vehicle_pose = lane_change_controller.get_traffic_pose()
-                    else:
-                        vehicle_pose = traffic_map.find_traffic_vehicle_poses(
-                            traffic_manager.traffic_s[vehicle_id] - ego_s, lane_id=lane_id
-                        )
-                    ego_vehicle = [
-                        traffic_manager.ego_x,
-                        traffic_manager.ego_y,
-                        ego_reference[2],
-                        traffic_manager.ego_yaw,
-                        ego_reference[4],
-                    ]
-                    local_pose = host_vehicle_coordinate_transformation(vehicle_pose, ego_vehicle)
-                    hololens_manager.update_virtual_vehicle_state(
-                        vehicle_id=vehicle_id,
-                        vehicle_type=traffic_manager.traffic_type[vehicle_id],
-                        x=local_pose[0],
-                        y=-local_pose[1],
-                        z=local_pose[2],
-                        yaw=-local_pose[3],
-                        pitch=-local_pose[4],
-                        acc=traffic_manager.traffic_alon[vehicle_id],
-                        vx=traffic_manager.traffic_v[vehicle_id],
-                        vy=0.0,
-                        brake_status=(
-                            True
-                            if vehicle_id == stationary_vehicle_id
-                            else traffic_manager.traffic_alon[vehicle_id] <= 0.0
-                        ),
-                    )
+                local_pose = host_vehicle_coordinate_transformation(vehicle_pose, ego_vehicle)
+                if vehicle_id == stationary_vehicle_id:
+                    traffic_manager.traffic_brake_status[vehicle_id] = True
+                else:
+                    traffic_manager.traffic_brake_status_update(vehicle_id)
+                hololens_manager.update_virtual_vehicle_state(
+                    vehicle_id=vehicle_id,
+                    vehicle_type=traffic_manager.traffic_type[vehicle_id],
+                    x=local_pose[0],
+                    y=-local_pose[1],
+                    z=local_pose[2],
+                    yaw=-local_pose[3],
+                    pitch=-local_pose[4],
+                    acc=traffic_manager.traffic_alon[vehicle_id],
+                    vx=traffic_manager.traffic_v[vehicle_id],
+                    vy=0.0,
+                    brake_status=traffic_manager.traffic_brake_status[vehicle_id],
+                )
+
+            if not session.started:
+                front_s, front_v, front_a = build_front_preview(
+                    traffic_map, 0.0, preview_dt, False,
+                    traffic_manager.traffic_s[0], 0.0, 0.0,
+                    0.0, 0.0, speed_limit,
+                )
 
             hololens_manager.construct_hololens_info_msg()
             traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
@@ -423,7 +376,7 @@ def main_double_lane_following():
                 s=front_s,
                 v=front_v,
                 a=front_a,
-                sim_start=traffic_manager.sim_start,
+                sim_start=session.running,
             )
             hololens_manager.publish_virtual_sim_info()
             traffic_manager.publish_traffic_sim_info()

@@ -89,6 +89,7 @@ class CMI_traffic_sim:
         self.ego_v = 0.0
         self.ego_acceleration_pitch = 0.0
         self.ego_pose_ref = np.zeros((3, 1))
+        self.ego_pose_received = False
 
         self.traffic_initialized = False
         self.sim_start = False
@@ -123,6 +124,9 @@ class CMI_traffic_sim:
         self.ego_acc = msg.pose.pose.orientation.x
         self.ego_pose_ref = np.array(
             [[self.ego_x], [self.ego_y], [self.ego_z]])
+        self.ego_pose_received = bool(
+            np.all(np.isfinite(self.ego_pose_ref)) and np.isfinite(self.ego_yaw)
+        )
 
     def lowlevel_bridge_callback(self, msg):
         self.ego_x = msg.data[11]
@@ -137,6 +141,9 @@ class CMI_traffic_sim:
         self.ego_v_east = msg.data[14]
         self.ego_pose_ref = np.array(
             [[self.ego_x], [self.ego_y], [self.ego_z]])
+        self.ego_pose_received = bool(
+            np.all(np.isfinite(self.ego_pose_ref)) and np.isfinite(self.ego_yaw)
+        )
 
     def traffic_initialization(
         self,
