@@ -30,15 +30,16 @@ def _distance(value, label):
 
 
 class DoubleLaneScenario:
-    def __init__(self, data):
+    def __init__(self, data, stationary_last=True):
         _fields(data, ("ego_vehicle", "vehicles"), "scenario")
         ego = data["ego_vehicle"]
         _fields(ego, ("lane_id", "initial_distance"), "ego_vehicle")
         _integer(ego["lane_id"], "ego_vehicle.lane_id")
         _distance(ego["initial_distance"], "ego_vehicle.initial_distance")
         vehicles = data["vehicles"]
-        if not isinstance(vehicles, list) or not 4 <= len(vehicles) <= 12:
-            raise ValueError("vehicles must contain 4–12 objects (at least 3 moving and 1 stationary)")
+        minimum = 4 if stationary_last else 2
+        if not isinstance(vehicles, list) or not minimum <= len(vehicles) <= 12:
+            raise ValueError("vehicles must contain {}–12 objects for this runtime".format(minimum))
         for index, vehicle in enumerate(vehicles):
             label = "vehicles[{}]".format(index)
             _fields(vehicle, ("id", "type", "lane_id", "initial_distance"), label)
@@ -49,7 +50,7 @@ class DoubleLaneScenario:
         if [v["id"] for v in self.vehicles] != list(range(len(vehicles))):
             raise ValueError("traffic IDs must be unique and contiguous starting at 0")
         self.ego = dict(ego)
-        self.stationary_id = len(vehicles) - 1
+        self.stationary_id = len(vehicles) - 1 if stationary_last else None
         if ego["lane_id"] != 0 or self.vehicles[0]["lane_id"] != 0:
             raise ValueError("ego and front vehicle ID 0 must occupy lane 0")
         if any(v["lane_id"] != 1 for v in self.vehicles[1:]):
@@ -73,10 +74,15 @@ class DoubleLaneScenario:
         self.ego_leader = self.predecessors["ego"]
         if self.ego_leader != 0:
             raise ValueError("front vehicle ID 0 must be ahead of ego")
-        expected_side_order = list(range(self.stationary_id - 1, 0, -1)) + [self.stationary_id]
+        if stationary_last:
+            expected_side_order = list(range(self.stationary_id - 1, 0, -1)) + [self.stationary_id]
+            order_error = ("lane 1 must have stationary last ID ahead of ID 1, "
+                           "with moving IDs ordered front-to-back as 1, 2, ...")
+        else:
+            expected_side_order = list(range(len(vehicles) - 1, 0, -1))
+            order_error = "lane 1 moving IDs must be ordered front-to-back as 1, 2, ..."
         if self.lane_order[1] != expected_side_order:
-            raise ValueError("lane 1 must have stationary last ID ahead of ID 1, "
-                             "with moving IDs ordered front-to-back as 1, 2, ...")
+            raise ValueError(order_error)
         self.offsets = [v["initial_distance"] - ego["initial_distance"] for v in self.vehicles]
         for index, offset in enumerate(self.offsets):
             _distance(offset, "vehicle {} offset from ego".format(index))
@@ -100,6 +106,13 @@ class DoubleLaneScenario:
                 initial_acceleration=0.0,
                 vehicle_type=vehicle["type"],
             )
+
+
+class BehaviorGenerationScenario(DoubleLaneScenario):
+    """The original two-lane layout: every configured traffic vehicle moves."""
+
+    def __init__(self, data):
+        super().__init__(data, stationary_last=False)
 
 
 class ScenarioSession:

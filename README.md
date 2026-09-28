@@ -12,7 +12,7 @@ The supported car-following runtimes are the ordinary driving-cycle simulations:
 
 The single-lane and double-lane nodes use speed-profile motion, optional preview, bounded vehicle states, and IDM/CBF follower safety for the double-lane case. Their ROS topics and message interfaces are unchanged.
 
-Behavior generation is not a supported runtime feature. There are no behavior-generation launch files, triggers, parameters, or active Koopman/CasADi behavior-generation dependencies.
+The separate double-lane behavior-generation runtime is also supported (see below). Ordinary driving-cycle nodes do not import its CasADi optimizer.
 
 ## Double-lane maps and scenario
 
@@ -89,6 +89,56 @@ source /home/cra/mach_e_ws/devel/setup.bash
 python3 -B -m unittest discover -s tests -v
 ```
 
+## Two-lane behavior generation (no lane changes)
+
+```bash
+roslaunch cra_traffic_sim cra_traffic_sim_behavior_generation_double_lane.launch
+```
+
+This restores the original front-vehicle behavior generation, return to driving
+cycle, and stop-at-distance modes. The side-lane leader uses IDM/CBF against a
+virtual leader derived from the front vehicle; side followers remain in lane 1.
+There is no lane-changing controller or stationary obstacle in this runtime.
+The existing ordinary double-lane launch continues to provide the obstacle and
+lane-change scenario.
+
+The new launch defaults to `config/double_lane_behavior_generation_scenario.json`.
+It uses the same `ego_vehicle` and `vehicles` JSON fields and the same pre-Start
+staging and pause/resume behavior. All entries represent moving vehicles,
+regardless of their `type`. IDs start at zero: ID 0 is ahead of ego in lane 0;
+IDs 1 onward are lane-1 vehicles ordered front-to-back. Configure 2–12 vehicles.
+The default five-vehicle scene preserves the old launch's 8 m front gap, 1 m
+side-leader offset, and 8 m side-follower spacing. JSON defines count and initial
+placement; it does not configure behavior-generation timing or control gains.
+
+Override `scenario_file`, `site_map_0`, and `site_map_1` as in the ordinary
+launch. The same two CMI map files are used by default. Do not run both traffic
+launches simultaneously: they publish the same traffic topics.
+
+Joystick button indices follow the old script: 5 starts/resumes, 4 pauses, and
+3 requests front-vehicle behavior generation on a rising edge. Automatic
+triggering is enabled by default: fresh `/control_target_cmd` messages with
+human acceleration below the configured threshold start the randomized quiet
+period. Set `auto_behavior_generation_enable:=false` for manual triggers only.
+Pausing freezes the active behavior's simulation timer and resets the automatic
+quiet-period timer. `front_vehicle_travel_distance` defaults to 1000 m; set it
+to zero to disable the final stop target.
+
+This runtime needs Python `casadi` and `numpy`. The restored optimizer and
+runtime A/B/C matrices live in `scripts/behavior_generation_optimizer.py` and
+`config/behavior_generation/`. It does not load archived training scripts or
+PyTorch models. `koopman_lift_method:=auto` selects the 16-state model, matching
+the old behavior. `behavior_generation_solver:=ipopt` is the default because
+local FATROP smoke tests failed and crashed; IPOPT passed the same optimization
+problem. The solver is configurable, but FATROP has not passed local validation.
+
+For tests including the actual optimizer:
+
+```bash
+source /home/cra/mach_e_ws/devel/setup.bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python3 -B -m unittest discover -s tests -v
+```
+
 ## Archived reference material
 
-The former behavior-generation scripts and their dedicated model, matrix, and analysis files are retained under `reference/behavior_generation/` for historical comparison only. They are not installed, launched, or maintained as runnable tools.
+The former behavior-generation scripts and their dedicated model, matrix, and analysis files are retained under `reference/behavior_generation/` for historical comparison only. The archived copies are not launched. The restored two-lane runtime and its required matrices are maintained separately under `scripts/` and `config/`.

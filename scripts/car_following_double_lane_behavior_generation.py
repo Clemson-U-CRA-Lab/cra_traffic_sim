@@ -9,8 +9,10 @@ from hololens_ros_communication.msg import ref_traj_correction
 from mach_e_control.msg import control_target
 from std_msgs.msg import Int8
 
-from sim_env_manager import *
-from utils import *
+from sim_env_manager import CMI_traffic_sim, hololens_message_manager, road_reader
+from utils import IDM, host_vehicle_coordinate_transformation
+from double_lane_scenario import BehaviorGenerationScenario, ScenarioSession, LaneMapGeometry
+from behavior_generation_optimizer import preceding_vehicle_spd_profile_generation
 
 # Define constants
 RAD_TO_DEGREE = 180.0 / np.pi
@@ -97,6 +99,28 @@ class HumanInterventionMonitor:
 
         self._ensure_quiet_window(now)
         return now - self.quiet_start_time >= self.quiet_delay
+
+
+class BehaviorTrafficManager(CMI_traffic_sim):
+    def __init__(self, *args, **kwargs):
+        self.behavior_generation_requested = False
+        self._prev_behavior_button_pressed = False
+        super().__init__(*args, **kwargs)
+
+    def joy_callback(self, msg):
+        if len(msg.buttons) > 4 and msg.buttons[4]:
+            self.sim_start = False
+        if len(msg.buttons) > 5 and msg.buttons[5]:
+            self.sim_start = True
+        pressed = len(msg.buttons) > 3 and bool(msg.buttons[3])
+        if pressed and not self._prev_behavior_button_pressed:
+            self.behavior_generation_requested = True
+        self._prev_behavior_button_pressed = pressed
+
+    def consume_behavior_generation_request(self):
+        requested = self.behavior_generation_requested
+        self.behavior_generation_requested = False
+        return requested
 
 
 def road_reference_correction_msg_prep(ego_pitch):
@@ -460,20 +484,25 @@ def update_side_lane_leader_from_lane0_idm(
     traffic_manager.traffic_l[1] = 1
 
 
-def initialize_side_lane_followers(traffic_manager, side_lane_leader_s, follower_gap, num_vehicles):
-    for vehicle_id in range(1, num_vehicles):
-        traffic_manager.traffic_s[vehicle_id] = side_lane_leader_s - follower_gap * (vehicle_id - 1)
-        traffic_manager.traffic_Sv_id[vehicle_id] = vehicle_id
-        traffic_manager.traffic_l[vehicle_id] = 1
-        traffic_manager.traffic_brake_status[vehicle_id] = True
-
-
 def main_double_lane_behavior_generation():
     # Path Parameters
     current_dirname = os.path.dirname(__file__)
     parent_dir = os.path.abspath(os.path.join(current_dirname, os.pardir))
 
-    num_Sv = rospy.get_param("/num_vehicles")
+    rospy.init_node("CRA_Digital_Twin_Traffic")
+    scenario_file = os.path.expanduser(rospy.get_param(
+        "~scenario_file", os.path.join(parent_dir, "config", "double_lane_behavior_generation_scenario.json")
+    ))
+    if not os.path.isabs(scenario_file):
+        scenario_file = os.path.join(parent_dir, scenario_file)
+    try:
+        scenario = BehaviorGenerationScenario.load(scenario_file)
+    except ValueError as error:
+        rospy.logfatal("%s", error)
+        return
+    num_Sv = len(scenario.vehicles)
+    rospy.loginfo("Initial lane ordering (rear to front): %s; predecessors: %s; ego leader: %s",
+                  scenario.lane_order, scenario.predecessors, scenario.ego_leader)
     track_style = rospy.get_param("/track_style")
 
     if track_style == "GrandPrix":
@@ -490,7 +519,6 @@ def main_double_lane_behavior_generation():
     use_preview = get_bool_param("/use_preview", False)
     run_direction = rospy.get_param("/runDirection")
     koopman_lift_method = rospy.get_param("/koopman_lift_method", "auto")
-    side_lane_leader_distance_offset = max(float(rospy.get_param("/side_lane_leader_distance_offset", 12.0)), 0.0)
     side_lane_leader_virtual_front_offset = max(
         float(rospy.get_param("/side_lane_leader_virtual_front_offset", 20.0)),
         0.0,
@@ -522,7 +550,6 @@ def main_double_lane_behavior_generation():
     spd_file = os.path.join(parent_dir, "speed_profile", spd_filename)
     print("PV speed pfofile is: ", spd_file)
 
-    rospy.init_node("CRA_Digital_Twin_Traffic")
     rate = rospy.Rate(100)
     human_intervention_monitor = None
     if auto_behavior_generation_enable:
@@ -534,11 +561,13 @@ def main_double_lane_behavior_generation():
             random_seed=auto_behavior_generation_random_seed,
         )
 
-    traffic_manager = CMI_traffic_sim(
+    traffic_manager = BehaviorTrafficManager(
         max_num_vehicles=12,
         num_vehicles=num_Sv,
         sil_simulation=run_sim,
     )
+
+    scenario.initialize(traffic_manager, 0.0)
 
     virtual_traffic_sim_info_manager = hololens_message_manager(
         num_vehicles=num_Sv,
@@ -562,9 +591,10 @@ def main_double_lane_behavior_generation():
     front_vehicle_motion_generator = preceding_vehicle_spd_profile_generation(
         horizon_length=8,
         time_interval=pv_dt,
+        solver=rospy.get_param("/behavior_generation_solver", "ipopt"),
     )
 
-    matrix_data_folder = os.path.join(parent_dir, "pv_scenario_generation_workspace", "data_driven_workspace")
+    matrix_data_folder = os.path.join(parent_dir, "config", "behavior_generation")
     A, B, C = front_vehicle_motion_generator.load_matrices_from_file(
         data_folder_path=matrix_data_folder,
         preferred_lift_method=koopman_lift_method,
@@ -583,7 +613,7 @@ def main_double_lane_behavior_generation():
     traffic_map_manager_0.read_map_data()
     traffic_map_manager_0.read_speed_profile()
     traffic_map_manager_1.read_map_data()
-    traffic_map_manager_1.read_speed_profile()
+    geometry = LaneMapGeometry([traffic_map_manager_0, traffic_map_manager_1])
 
     dir_msg_publisher = rospy.Publisher("/runDirection", Int8, queue_size=2)
     lowlevel_heartbeat_publisher = rospy.Publisher("/low_level_heartbeat", Int8, queue_size=2)
@@ -591,12 +621,10 @@ def main_double_lane_behavior_generation():
 
     msg_counter = 0
     ego_vehicle_pitch_from_acceleration = 0.0
-    prev_t = time.time()
     sim_t = 0.0
     ego_s_init_0 = 0.0
-    ego_s_init_1 = 0.0
-    init_gap = 8.0
-    init_spd_t, _, _ = traffic_map_manager_0.find_speed_profile_information(sim_t=0.0)
+    init_gap = scenario.front_gap
+    init_spd_t, initial_profile_distance, _ = traffic_map_manager_0.find_speed_profile_information(sim_t=0.0)
 
     reward_tracking_duration = 2.0
     reward_target_ramp_duration = reward_tracking_duration
@@ -620,10 +648,36 @@ def main_double_lane_behavior_generation():
     front_vehicle_stop_target_s = None
     front_vehicle_stop_target_logged = False
 
+    session = ScenarioSession(scenario, float(np.clip(init_spd_t, 0.0, front_vehicle_speed_limit)))
+    front_s_t = [0.0] * 40
+    front_v_t = [0.0] * 40
+    front_a_t = [0.0] * 40
+
     while not rospy.is_shutdown():
         try:
-            Dt = time.time() - prev_t
-            prev_t = time.time()
+            requested_start = traffic_manager.sim_start
+            pose_ready = traffic_manager.ego_pose_received
+            s_ego_frenet_0 = 0.0
+            if pose_ready:
+                s_ego_frenet_0, _, _ = traffic_map_manager_0.find_ego_vehicle_distance_reference(
+                    traffic_manager.ego_pose_ref)
+                pose_ready = bool(np.isfinite(s_ego_frenet_0))
+                if pose_ready and not session.started:
+                    pose_ready = geometry.align_to_ego(traffic_manager.ego_pose_ref, s_ego_frenet_0)
+            was_started = session.started
+            Dt = session.update(traffic_manager, s_ego_frenet_0, pose_ready,
+                                requested_start, time.monotonic())
+            if not session.ready:
+                if human_intervention_monitor is not None:
+                    human_intervention_monitor.reset_quiet_window()
+                rospy.logwarn_throttle(5.0, "Waiting for a valid ego pose on both maps")
+                rate.sleep()
+                continue
+            sim_t = session.sim_t
+            if session.started:
+                ego_s_init_0 = session.anchor_s - initial_profile_distance
+            if session.started and not was_started and front_vehicle_travel_distance > 0.0:
+                front_vehicle_stop_target_s = traffic_manager.traffic_s[0] + front_vehicle_travel_distance
 
             traffic_manager.serial_id = msg_counter
             virtual_traffic_sim_info_manager.update_ego_state(
@@ -638,19 +692,12 @@ def main_double_lane_behavior_generation():
                 ego_omega=traffic_manager.ego_omega,
             )
 
-            s_ego_frenet_0, _, _ = traffic_map_manager_0.find_ego_vehicle_distance_reference(
-                traffic_manager.ego_pose_ref
-            )
-            s_ego_frenet_1, _, _ = traffic_map_manager_1.find_ego_vehicle_distance_reference(
-                traffic_manager.ego_pose_ref
-            )
-            ego_vehicle_ref_poses = traffic_map_manager_0.find_traffic_vehicle_poses_single_lane(
-                s_ego_frenet_0
-            )
-
-            front_s_t = [0.0] * 40
-            front_v_t = [0.0] * 40
-            front_a_t = [0.0] * 40
+            ego_vehicle_ref_poses = geometry.pose(s_ego_frenet_0, lane_id=0)
+            _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager_0.find_ego_frenet_pose(
+                ego_poses=traffic_manager.ego_pose_ref, ego_yaw=traffic_manager.ego_yaw,
+                vy=traffic_manager.ego_v_north, vx=traffic_manager.ego_v_east)
+            traffic_manager.ego_vehicle_frenet_update(
+                s=s_ego_frenet_0, l=0.0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
 
             run_dir_msg = Int8()
             run_dir_msg.data = run_direction
@@ -660,251 +707,141 @@ def main_double_lane_behavior_generation():
             lowlevel_heartbeat_msg.data = 1
             lowlevel_heartbeat_publisher.publish(lowlevel_heartbeat_msg)
 
-            if human_intervention_monitor is not None and not traffic_manager.sim_start:
+            if human_intervention_monitor is not None and not session.running:
                 human_intervention_monitor.reset_quiet_window()
 
-            if sim_t < 0.5 and traffic_manager.sim_start:
-                sim_t += Dt
-                traffic_manager.traffic_initialization(
-                    s_ego=s_ego_frenet_0,
-                    ds=init_gap,
-                    line_number=0,
-                    vehicle_id=0,
-                    vehicle_id_in_lane=0,
-                    initial_speed=init_spd_t,
-                    initial_acceleration=0.0,
-                )
-                ego_s_init_0 = s_ego_frenet_0
-                ego_s_init_1 = s_ego_frenet_1
-                lane_0_progress = traffic_manager.traffic_s[0] - ego_s_init_0
-                side_lane_leader_s = (
-                    ego_s_init_1 + lane_0_progress + side_lane_leader_distance_offset
-                )
-                initialize_side_lane_followers(
-                    traffic_manager=traffic_manager,
-                    side_lane_leader_s=side_lane_leader_s,
-                    follower_gap=init_gap,
-                    num_vehicles=num_Sv,
-                )
-                if front_vehicle_travel_distance > 0.0:
-                    front_vehicle_stop_target_s = traffic_manager.traffic_s[0] + front_vehicle_travel_distance
+            msg_counter += 1
+            if session.running:
+                cycle_ref = get_cycle_reference(traffic_map_manager_0, sim_t, ego_s_init_0, init_gap)
+                if front_vehicle_stop_target_s is not None and not front_vehicle_stop_target_logged:
+                    rospy.loginfo(
+                        "Front vehicle stop target set to %.3f m Frenet s (%.3f m travel distance).",
+                        front_vehicle_stop_target_s,
+                        front_vehicle_travel_distance,
+                    )
+                    front_vehicle_stop_target_logged = True
 
-                traffic_manager.ego_s = s_ego_frenet_0
-                traffic_manager.ego_l = 0.0
-                traffic_manager.ego_sv = init_spd_t
-                traffic_manager.ego_v = init_spd_t
-                traffic_manager.ego_lv = 0.0
-                traffic_manager.ego_acc = 0.0
-                traffic_manager.ego_yaw_s = 0.0
+                if human_intervention_monitor is not None and scenario_mode != DRIVING_CYCLE_MODE:
+                    human_intervention_monitor.reset_quiet_window()
 
-                front_s_t[0] = round(traffic_manager.traffic_s[0], 3)
-                front_v_t[0] = round(traffic_manager.traffic_v[0], 3)
-                front_a_t[0] = round(traffic_manager.traffic_alon[0], 3)
-
-                traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
-                traffic_manager.construct_vehicle_state_sequence_msg(
-                    id=msg_counter,
-                    t=sim_t,
-                    s=front_s_t,
-                    v=front_v_t,
-                    a=front_a_t,
-                    sim_start=traffic_manager.sim_start,
-                )
-                traffic_manager.publish_traffic_sim_info()
-                traffic_manager.publish_vehicle_traj()
-                continue
-            else:
-                msg_counter += 1
-                if traffic_manager.sim_start:
-                    sim_t += Dt
-                    cycle_ref = get_cycle_reference(traffic_map_manager_0, sim_t, ego_s_init_0, init_gap)
-                    if front_vehicle_stop_target_s is not None and not front_vehicle_stop_target_logged:
-                        rospy.loginfo(
-                            "Front vehicle stop target set to %.3f m Frenet s (%.3f m travel distance).",
-                            front_vehicle_stop_target_s,
-                            front_vehicle_travel_distance,
+                if scenario_mode == DRIVING_CYCLE_MODE:
+                    manual_behavior_request = traffic_manager.consume_behavior_generation_request()
+                    auto_behavior_request = (
+                        human_intervention_monitor is not None
+                        and human_intervention_monitor.should_trigger()
+                    )
+                    if manual_behavior_request or auto_behavior_request:
+                        scenario_mode = BEHAVIOR_GENERATION_MODE
+                        behavior_generation_start_time = sim_t
+                        if human_intervention_monitor is not None:
+                            human_intervention_monitor.reset_quiet_window()
+                        trigger_source = (
+                            "automatic no-intervention timer"
+                            if auto_behavior_request
+                            else "manual joystick request"
                         )
-                        front_vehicle_stop_target_logged = True
+                        rospy.loginfo("Front vehicle switched to behavior generation mode by %s.", trigger_source)
 
-                    if human_intervention_monitor is not None and scenario_mode != DRIVING_CYCLE_MODE:
-                        human_intervention_monitor.reset_quiet_window()
+                if front_vehicle_stop_target_s is not None and scenario_mode not in {
+                    STOP_AT_DISTANCE_MODE,
+                    HOLD_STOPPED_MODE,
+                }:
+                    cycle_s_with_offset = cycle_ref["world_s"] + driving_cycle_distance_offset
+                    cycle_would_pass_target = (
+                        scenario_mode == DRIVING_CYCLE_MODE
+                        and cycle_s_with_offset >= front_vehicle_stop_target_s
+                    )
+                    should_stop_now = should_begin_stop_at_distance(
+                        traffic_manager.traffic_s[0],
+                        traffic_manager.traffic_v[0],
+                        front_vehicle_stop_target_s,
+                        front_vehicle_acc_min,
+                        front_vehicle_stop_buffer,
+                    )
+                    if cycle_would_pass_target or should_stop_now:
+                        scenario_mode = STOP_AT_DISTANCE_MODE
+                        behavior_generation_start_time = None
+                        rospy.loginfo("Front vehicle switched to stop-at-distance mode.")
 
-                    if scenario_mode == DRIVING_CYCLE_MODE:
-                        manual_behavior_request = traffic_manager.consume_behavior_generation_request()
-                        auto_behavior_request = (
-                            human_intervention_monitor is not None
-                            and human_intervention_monitor.should_trigger()
+                if scenario_mode == DRIVING_CYCLE_MODE:
+                    apply_cycle_reference_with_offset(
+                        traffic_manager=traffic_manager,
+                        cycle_ref=cycle_ref,
+                        distance_offset=driving_cycle_distance_offset,
+                        vehicle_id=0,
+                    )
+                elif scenario_mode == BEHAVIOR_GENERATION_MODE:
+                    front_vehicle_motion_generator.update_ego_vehicle_state(
+                        ego_a_t=traffic_manager.ego_acc,
+                        ego_v_t=traffic_manager.ego_v,
+                        ego_s_t=traffic_manager.ego_s,
+                        pv_a_t=traffic_manager.traffic_alon[0],
+                        pv_v_t=traffic_manager.traffic_v[0],
+                        pv_s_t=traffic_manager.traffic_s[0],
+                    )
+
+                    d_a_max = front_vehicle_acc_max - traffic_manager.ego_acc
+                    d_a_min = front_vehicle_acc_min - traffic_manager.ego_acc
+                    d_v_max = front_vehicle_speed_limit - traffic_manager.ego_v
+                    d_v_min = 0.0 - traffic_manager.ego_v
+                    behavior_elapsed = sim_t - behavior_generation_start_time
+
+                    if behavior_elapsed < reward_tracking_duration:
+                        reward_target_window = build_linear_reward_target_window(
+                            current_time=behavior_elapsed,
+                            horizon_length=front_vehicle_motion_generator.h,
+                            time_interval=pv_dt,
+                            target_max=reward_target_max,
+                            ramp_duration=reward_target_ramp_duration,
                         )
-                        if manual_behavior_request or auto_behavior_request:
-                            scenario_mode = BEHAVIOR_GENERATION_MODE
-                            behavior_generation_start_time = sim_t
-                            if human_intervention_monitor is not None:
-                                human_intervention_monitor.reset_quiet_window()
-                            trigger_source = (
-                                "automatic no-intervention timer"
-                                if auto_behavior_request
-                                else "manual joystick request"
-                            )
-                            rospy.loginfo("Front vehicle switched to behavior generation mode by %s.", trigger_source)
-
-                    if front_vehicle_stop_target_s is not None and scenario_mode not in {
-                        STOP_AT_DISTANCE_MODE,
-                        HOLD_STOPPED_MODE,
-                    }:
-                        cycle_s_with_offset = cycle_ref["world_s"] + driving_cycle_distance_offset
-                        cycle_would_pass_target = (
-                            scenario_mode == DRIVING_CYCLE_MODE
-                            and cycle_s_with_offset >= front_vehicle_stop_target_s
+                        front_vehicle_motion_generator.perform_nonlinear_optimization_for_reward_tracking(
+                            Q=reward_Q,
+                            R=reward_R,
+                            reward_target=reward_target_window,
+                            a_max=d_a_max,
+                            a_min=d_a_min,
+                            v_max=d_v_max,
+                            v_min=d_v_min,
+                            R_du=reward_R_du,
                         )
-                        should_stop_now = should_begin_stop_at_distance(
-                            traffic_manager.traffic_s[0],
-                            traffic_manager.traffic_v[0],
-                            front_vehicle_stop_target_s,
-                            front_vehicle_acc_min,
-                            front_vehicle_stop_buffer,
-                        )
-                        if cycle_would_pass_target or should_stop_now:
-                            scenario_mode = STOP_AT_DISTANCE_MODE
-                            behavior_generation_start_time = None
-                            rospy.loginfo("Front vehicle switched to stop-at-distance mode.")
-
-                    if scenario_mode == DRIVING_CYCLE_MODE:
-                        apply_cycle_reference_with_offset(
-                            traffic_manager=traffic_manager,
-                            cycle_ref=cycle_ref,
-                            distance_offset=driving_cycle_distance_offset,
-                            vehicle_id=0,
-                        )
-                    elif scenario_mode == BEHAVIOR_GENERATION_MODE:
-                        front_vehicle_motion_generator.update_ego_vehicle_state(
-                            ego_a_t=traffic_manager.ego_acc,
-                            ego_v_t=traffic_manager.ego_v,
-                            ego_s_t=traffic_manager.ego_s,
-                            pv_a_t=traffic_manager.traffic_alon[0],
-                            pv_v_t=traffic_manager.traffic_v[0],
-                            pv_s_t=traffic_manager.traffic_s[0],
-                        )
-
-                        d_a_max = front_vehicle_acc_max - traffic_manager.ego_acc
-                        d_a_min = front_vehicle_acc_min - traffic_manager.ego_acc
-                        d_v_max = front_vehicle_speed_limit - traffic_manager.ego_v
-                        d_v_min = 0.0 - traffic_manager.ego_v
-                        behavior_elapsed = sim_t - behavior_generation_start_time
-
-                        if behavior_elapsed < reward_tracking_duration:
-                            reward_target_window = build_linear_reward_target_window(
-                                current_time=behavior_elapsed,
-                                horizon_length=front_vehicle_motion_generator.h,
-                                time_interval=pv_dt,
-                                target_max=reward_target_max,
-                                ramp_duration=reward_target_ramp_duration,
-                            )
-                            front_vehicle_motion_generator.perform_nonlinear_optimization_for_reward_tracking(
-                                Q=reward_Q,
-                                R=reward_R,
-                                reward_target=reward_target_window,
-                                a_max=d_a_max,
-                                a_min=d_a_min,
-                                v_max=d_v_max,
-                                v_min=d_v_min,
-                                R_du=reward_R_du,
-                            )
-                            front_a_target = traffic_manager.ego_acc + float(front_vehicle_motion_generator.reward_tracking_u_opt[0])
-                            front_a = float(np.clip(traffic_manager.traffic_alon[0], front_vehicle_acc_min, front_vehicle_acc_max))
-                            commanded_acc = front_a + 0.2 * (front_a_target - front_a)
-                            commanded_acc = float(np.clip(commanded_acc, front_vehicle_acc_min, front_vehicle_acc_max))
-                            use_behavior_update = True
-                        elif behavior_elapsed < behavior_generation_duration:
-                            commanded_acc = 0.0
-                            use_behavior_update = True
-                        else:
-                            behavior_generation_start_time = None
-                            if (
-                                front_vehicle_stop_target_s is not None
-                                and should_begin_stop_at_distance(
-                                    traffic_manager.traffic_s[0],
-                                    traffic_manager.traffic_v[0],
-                                    front_vehicle_stop_target_s,
-                                    front_vehicle_acc_min,
-                                    front_vehicle_stop_buffer,
-                                )
-                            ):
-                                use_behavior_update = False
-                                scenario_mode = STOP_AT_DISTANCE_MODE
-                                rospy.loginfo("Front vehicle switched to stop-at-distance mode.")
-                            else:
-                                use_behavior_update = True
-                                scenario_mode = RETURN_TO_CYCLE_MODE
-                                commanded_acc = compute_return_to_cycle_acceleration(
-                                    traffic_manager.traffic_s[0],
-                                    traffic_manager.traffic_v[0],
-                                    cycle_ref,
-                                    front_vehicle_speed_limit,
-                                    Dt,
-                                    front_vehicle_acc_min,
-                                    front_vehicle_acc_max,
-                                )
-                                rospy.loginfo("Front vehicle switched to return-to-cycle mode.")
-
-                        if use_behavior_update:
-                            next_s, next_v, next_a = clamp_vehicle_state(
+                        front_a_target = traffic_manager.ego_acc + float(front_vehicle_motion_generator.reward_tracking_u_opt[0])
+                        front_a = float(np.clip(traffic_manager.traffic_alon[0], front_vehicle_acc_min, front_vehicle_acc_max))
+                        commanded_acc = front_a + 0.2 * (front_a_target - front_a)
+                        commanded_acc = float(np.clip(commanded_acc, front_vehicle_acc_min, front_vehicle_acc_max))
+                        use_behavior_update = True
+                    elif behavior_elapsed < behavior_generation_duration:
+                        commanded_acc = 0.0
+                        use_behavior_update = True
+                    else:
+                        behavior_generation_start_time = None
+                        if (
+                            front_vehicle_stop_target_s is not None
+                            and should_begin_stop_at_distance(
                                 traffic_manager.traffic_s[0],
                                 traffic_manager.traffic_v[0],
-                                commanded_acc,
-                                Dt,
+                                front_vehicle_stop_target_s,
+                                front_vehicle_acc_min,
+                                front_vehicle_stop_buffer,
+                            )
+                        ):
+                            use_behavior_update = False
+                            scenario_mode = STOP_AT_DISTANCE_MODE
+                            rospy.loginfo("Front vehicle switched to stop-at-distance mode.")
+                        else:
+                            use_behavior_update = True
+                            scenario_mode = RETURN_TO_CYCLE_MODE
+                            commanded_acc = compute_return_to_cycle_acceleration(
+                                traffic_manager.traffic_s[0],
+                                traffic_manager.traffic_v[0],
+                                cycle_ref,
                                 front_vehicle_speed_limit,
+                                Dt,
                                 front_vehicle_acc_min,
                                 front_vehicle_acc_max,
                             )
-                            stopped_at_target = False
-                            if front_vehicle_stop_target_s is not None:
-                                next_s, next_v, next_a, stopped_at_target = clamp_to_stop_target(
-                                    next_s,
-                                    next_v,
-                                    next_a,
-                                    front_vehicle_stop_target_s,
-                                    front_vehicle_stop_distance_tolerance,
-                                    front_vehicle_stop_speed_tolerance,
-                                )
-                            traffic_manager.traffic_s[0] = next_s
-                            traffic_manager.traffic_v[0] = next_v
-                            traffic_manager.traffic_alon[0] = next_a
-                            if stopped_at_target:
-                                scenario_mode = HOLD_STOPPED_MODE
-                                behavior_generation_start_time = None
-                                rospy.loginfo("Front vehicle reached stop target and is holding.")
-                    elif scenario_mode == STOP_AT_DISTANCE_MODE:
-                        next_s, next_v, next_a, stopped_at_target = update_front_vehicle_stop_at_distance(
-                            traffic_manager.traffic_s[0],
-                            traffic_manager.traffic_v[0],
-                            Dt,
-                            front_vehicle_stop_target_s,
-                            front_vehicle_speed_limit,
-                            front_vehicle_acc_min,
-                            front_vehicle_acc_max,
-                            front_vehicle_stop_distance_tolerance,
-                            front_vehicle_stop_speed_tolerance,
-                        )
-                        traffic_manager.traffic_s[0] = next_s
-                        traffic_manager.traffic_v[0] = next_v
-                        traffic_manager.traffic_alon[0] = next_a
-                        if stopped_at_target:
-                            scenario_mode = HOLD_STOPPED_MODE
-                            rospy.loginfo("Front vehicle reached stop target and is holding.")
-                    elif scenario_mode == HOLD_STOPPED_MODE:
-                        traffic_manager.traffic_s[0] = front_vehicle_stop_target_s
-                        traffic_manager.traffic_v[0] = 0.0
-                        traffic_manager.traffic_alon[0] = 0.0
-                    elif scenario_mode == RETURN_TO_CYCLE_MODE:
-                        commanded_acc = compute_return_to_cycle_acceleration(
-                            traffic_manager.traffic_s[0],
-                            traffic_manager.traffic_v[0],
-                            cycle_ref,
-                            front_vehicle_speed_limit,
-                            Dt,
-                            front_vehicle_acc_min,
-                            front_vehicle_acc_max,
-                        )
+                            rospy.loginfo("Front vehicle switched to return-to-cycle mode.")
+
+                    if use_behavior_update:
                         next_s, next_v, next_a = clamp_vehicle_state(
                             traffic_manager.traffic_s[0],
                             traffic_manager.traffic_v[0],
@@ -914,173 +851,159 @@ def main_double_lane_behavior_generation():
                             front_vehicle_acc_min,
                             front_vehicle_acc_max,
                         )
+                        stopped_at_target = False
+                        if front_vehicle_stop_target_s is not None:
+                            next_s, next_v, next_a, stopped_at_target = clamp_to_stop_target(
+                                next_s,
+                                next_v,
+                                next_a,
+                                front_vehicle_stop_target_s,
+                                front_vehicle_stop_distance_tolerance,
+                                front_vehicle_stop_speed_tolerance,
+                            )
                         traffic_manager.traffic_s[0] = next_s
                         traffic_manager.traffic_v[0] = next_v
                         traffic_manager.traffic_alon[0] = next_a
-
-                        close_to_cycle_speed = abs(traffic_manager.traffic_v[0] - cycle_ref["speed"]) < return_speed_tolerance
-                        if close_to_cycle_speed:
-                            driving_cycle_distance_offset = traffic_manager.traffic_s[0] - cycle_ref["world_s"]
-                            apply_cycle_reference_with_offset(
-                                traffic_manager=traffic_manager,
-                                cycle_ref=cycle_ref,
-                                distance_offset=driving_cycle_distance_offset,
-                                vehicle_id=0,
-                            )
-                            scenario_mode = DRIVING_CYCLE_MODE
+                        if stopped_at_target:
+                            scenario_mode = HOLD_STOPPED_MODE
                             behavior_generation_start_time = None
-                            rospy.loginfo(
-                                "Front vehicle rejoined the driving cycle with %.3f m distance offset.",
-                                driving_cycle_distance_offset,
-                            )
-
-                    front_s_t, front_v_t, front_a_t = build_front_preview(
-                        mode=scenario_mode,
-                        sim_t=sim_t,
-                        pv_dt=pv_dt,
-                        use_preview=use_preview,
-                        front_vehicle_speed_limit=front_vehicle_speed_limit,
-                        traffic_map_manager=traffic_map_manager_0,
-                        front_s=traffic_manager.traffic_s[0],
-                        front_v=traffic_manager.traffic_v[0],
-                        front_a=traffic_manager.traffic_alon[0],
-                        ego_s_init=ego_s_init_0,
-                        init_gap=init_gap,
-                        driving_cycle_distance_offset=driving_cycle_distance_offset,
-                        front_acc_min=front_vehicle_acc_min,
-                        front_acc_max=front_vehicle_acc_max,
-                        target_stop_s=front_vehicle_stop_target_s,
-                        stop_distance_tolerance=front_vehicle_stop_distance_tolerance,
-                        stop_speed_tolerance=front_vehicle_stop_speed_tolerance,
+                            rospy.loginfo("Front vehicle reached stop target and is holding.")
+                elif scenario_mode == STOP_AT_DISTANCE_MODE:
+                    next_s, next_v, next_a, stopped_at_target = update_front_vehicle_stop_at_distance(
+                        traffic_manager.traffic_s[0],
+                        traffic_manager.traffic_v[0],
+                        Dt,
+                        front_vehicle_stop_target_s,
+                        front_vehicle_speed_limit,
+                        front_vehicle_acc_min,
+                        front_vehicle_acc_max,
+                        front_vehicle_stop_distance_tolerance,
+                        front_vehicle_stop_speed_tolerance,
                     )
-
-                    update_side_lane_leader_from_lane0_idm(
-                        traffic_manager=traffic_manager,
-                        idm_control=idm_control,
-                        dt=Dt,
-                        num_vehicles=num_Sv,
-                        virtual_front_offset=side_lane_leader_virtual_front_offset,
-                        side_lane_speed_limit=side_lane_speed_limit,
-                        side_lane_acc_min=side_lane_acc_min,
-                        side_lane_acc_max=side_lane_acc_max,
-                        side_lane_cbf_enable=side_lane_cbf_enable,
-                        side_lane_cbf_alpha=side_lane_cbf_alpha,
-                        side_lane_cbf_s0=side_lane_cbf_s0,
-                        side_lane_cbf_time_headway=side_lane_cbf_time_headway,
-                        side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
+                    traffic_manager.traffic_s[0] = next_s
+                    traffic_manager.traffic_v[0] = next_v
+                    traffic_manager.traffic_alon[0] = next_a
+                    if stopped_at_target:
+                        scenario_mode = HOLD_STOPPED_MODE
+                        rospy.loginfo("Front vehicle reached stop target and is holding.")
+                elif scenario_mode == HOLD_STOPPED_MODE:
+                    traffic_manager.traffic_s[0] = front_vehicle_stop_target_s
+                    traffic_manager.traffic_v[0] = 0.0
+                    traffic_manager.traffic_alon[0] = 0.0
+                elif scenario_mode == RETURN_TO_CYCLE_MODE:
+                    commanded_acc = compute_return_to_cycle_acceleration(
+                        traffic_manager.traffic_s[0],
+                        traffic_manager.traffic_v[0],
+                        cycle_ref,
+                        front_vehicle_speed_limit,
+                        Dt,
+                        front_vehicle_acc_min,
+                        front_vehicle_acc_max,
                     )
-                    update_side_lane_idm_followers(
-                        traffic_manager=traffic_manager,
-                        idm_control=idm_control,
-                        dt=Dt,
-                        num_vehicles=num_Sv,
-                        side_lane_speed_limit=side_lane_speed_limit,
-                        side_lane_acc_min=side_lane_acc_min,
-                        side_lane_acc_max=side_lane_acc_max,
-                        side_lane_cbf_enable=side_lane_cbf_enable,
-                        side_lane_cbf_alpha=side_lane_cbf_alpha,
-                        side_lane_cbf_s0=side_lane_cbf_s0,
-                        side_lane_cbf_time_headway=side_lane_cbf_time_headway,
-                        side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
-                        first_follower_id=2,
+                    next_s, next_v, next_a = clamp_vehicle_state(
+                        traffic_manager.traffic_s[0],
+                        traffic_manager.traffic_v[0],
+                        commanded_acc,
+                        Dt,
+                        front_vehicle_speed_limit,
+                        front_vehicle_acc_min,
+                        front_vehicle_acc_max,
                     )
+                    traffic_manager.traffic_s[0] = next_s
+                    traffic_manager.traffic_v[0] = next_v
+                    traffic_manager.traffic_alon[0] = next_a
 
-                    # if use_acceleration_pitch:
+                    close_to_cycle_speed = abs(traffic_manager.traffic_v[0] - cycle_ref["speed"]) < return_speed_tolerance
+                    if close_to_cycle_speed:
+                        driving_cycle_distance_offset = traffic_manager.traffic_s[0] - cycle_ref["world_s"]
+                        apply_cycle_reference_with_offset(
+                            traffic_manager=traffic_manager,
+                            cycle_ref=cycle_ref,
+                            distance_offset=driving_cycle_distance_offset,
+                            vehicle_id=0,
+                        )
+                        scenario_mode = DRIVING_CYCLE_MODE
+                        behavior_generation_start_time = None
+                        rospy.loginfo(
+                            "Front vehicle rejoined the driving cycle with %.3f m distance offset.",
+                            driving_cycle_distance_offset,
+                        )
+
+                front_s_t, front_v_t, front_a_t = build_front_preview(
+                    mode=scenario_mode,
+                    sim_t=sim_t,
+                    pv_dt=pv_dt,
+                    use_preview=use_preview,
+                    front_vehicle_speed_limit=front_vehicle_speed_limit,
+                    traffic_map_manager=traffic_map_manager_0,
+                    front_s=traffic_manager.traffic_s[0],
+                    front_v=traffic_manager.traffic_v[0],
+                    front_a=traffic_manager.traffic_alon[0],
+                    ego_s_init=ego_s_init_0,
+                    init_gap=init_gap,
+                    driving_cycle_distance_offset=driving_cycle_distance_offset,
+                    front_acc_min=front_vehicle_acc_min,
+                    front_acc_max=front_vehicle_acc_max,
+                    target_stop_s=front_vehicle_stop_target_s,
+                    stop_distance_tolerance=front_vehicle_stop_distance_tolerance,
+                    stop_speed_tolerance=front_vehicle_stop_speed_tolerance,
+                )
+
+                update_side_lane_leader_from_lane0_idm(
+                    traffic_manager=traffic_manager,
+                    idm_control=idm_control,
+                    dt=Dt,
+                    num_vehicles=num_Sv,
+                    virtual_front_offset=side_lane_leader_virtual_front_offset,
+                    side_lane_speed_limit=side_lane_speed_limit,
+                    side_lane_acc_min=side_lane_acc_min,
+                    side_lane_acc_max=side_lane_acc_max,
+                    side_lane_cbf_enable=side_lane_cbf_enable,
+                    side_lane_cbf_alpha=side_lane_cbf_alpha,
+                    side_lane_cbf_s0=side_lane_cbf_s0,
+                    side_lane_cbf_time_headway=side_lane_cbf_time_headway,
+                    side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
+                )
+                update_side_lane_idm_followers(
+                    traffic_manager=traffic_manager,
+                    idm_control=idm_control,
+                    dt=Dt,
+                    num_vehicles=num_Sv,
+                    side_lane_speed_limit=side_lane_speed_limit,
+                    side_lane_acc_min=side_lane_acc_min,
+                    side_lane_acc_max=side_lane_acc_max,
+                    side_lane_cbf_enable=side_lane_cbf_enable,
+                    side_lane_cbf_alpha=side_lane_cbf_alpha,
+                    side_lane_cbf_s0=side_lane_cbf_s0,
+                    side_lane_cbf_time_headway=side_lane_cbf_time_headway,
+                    side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
+                    first_follower_id=2,
+                )
+
+                if use_acceleration_pitch:
                     ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
-                        pitch_max=1.6 / RAD_TO_DEGREE,
-                        pitch_min=-1.6 / RAD_TO_DEGREE,
-                        acc_max=8.0,
-                        acc_min=-9.0,
-                    )
-                    # else:
-                    #     ego_vehicle_pitch_from_acceleration = 0.0
-                    ego_vehicle_poses = [
-                        traffic_manager.ego_x,
-                        traffic_manager.ego_y,
-                        ego_vehicle_ref_poses[2],
-                        traffic_manager.ego_yaw,
-                        ego_vehicle_ref_poses[4],
-                    ]
-                    _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager_0.find_ego_frenet_pose(
-                        ego_poses=traffic_manager.ego_pose_ref,
-                        ego_yaw=ego_vehicle_poses[3],
-                        vy=traffic_manager.ego_v_north,
-                        vx=traffic_manager.ego_v_east,
-                    )
-                    traffic_manager.ego_vehicle_frenet_update(
-                        s=s_ego_frenet_0,
-                        l=0,
-                        sv=v_longitudinal,
-                        lv=v_lateral,
-                        yaw_s=yaw_s,
-                    )
-
-                    for i in range(num_Sv):
-                        vehicle_map_manager = (
-                            traffic_map_manager_0 if i == 0 else traffic_map_manager_1
-                        )
-                        traffic_vehicle_poses = vehicle_map_manager.find_traffic_vehicle_poses_single_lane(
-                            traffic_manager.traffic_s[i]
-                        )
-
-                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(
-                            traffic_vehicle_poses,
-                            ego_vehicle_poses,
-                        )
-
-                        traffic_manager.traffic_brake_status_update(vehicle_id=i)
-                        virtual_vehicle_brake = traffic_manager.traffic_brake_status[i]
-
-                        virtual_traffic_sim_info_manager.update_virtual_vehicle_state(
-                            vehicle_id=i,
-                            x=local_traffic_vehicle_poses[0],
-                            y=-local_traffic_vehicle_poses[1],
-                            z=local_traffic_vehicle_poses[2],
-                            yaw=-local_traffic_vehicle_poses[3],
-                            pitch=-local_traffic_vehicle_poses[4],
-                            acc=traffic_manager.traffic_alon[i],
-                            vx=traffic_manager.traffic_v[i],
-                            vy=0.0,
-                            brake_status=virtual_vehicle_brake,
-                        )
+                        pitch_max=1.6 / RAD_TO_DEGREE, pitch_min=-1.6 / RAD_TO_DEGREE,
+                        acc_max=8.0, acc_min=-9.0)
                 else:
-                    for i in range(num_Sv):
-                        if i == 0:
-                            vehicle_map_manager = traffic_map_manager_0
-                            vehicle_s = traffic_manager.traffic_s[i] - s_ego_frenet_0
-                        else:
-                            vehicle_map_manager = traffic_map_manager_1
-                            vehicle_s = traffic_manager.traffic_s[i] - s_ego_frenet_1
-                        traffic_vehicle_poses = vehicle_map_manager.find_traffic_vehicle_poses_single_lane(
-                            vehicle_s
-                        )
-                        ego_vehicle_poses = [
-                            traffic_manager.ego_x,
-                            traffic_manager.ego_y,
-                            ego_vehicle_ref_poses[2],
-                            traffic_manager.ego_yaw,
-                            ego_vehicle_ref_poses[4],
-                        ]
-                        local_traffic_vehicle_poses = host_vehicle_coordinate_transformation(
-                            traffic_vehicle_poses,
-                            ego_vehicle_poses,
-                        )
-                        if traffic_manager.traffic_alon[i] <= 0:
-                            virtual_vehicle_brake = True
-                        else:
-                            virtual_vehicle_brake = False
-                        virtual_traffic_sim_info_manager.update_virtual_vehicle_state(
-                            vehicle_id=i,
-                            x=local_traffic_vehicle_poses[0],
-                            y=-local_traffic_vehicle_poses[1],
-                            z=local_traffic_vehicle_poses[2],
-                            yaw=-local_traffic_vehicle_poses[3],
-                            pitch=-local_traffic_vehicle_poses[4],
-                            acc=traffic_manager.traffic_alon[i],
-                            vx=traffic_manager.traffic_v[i],
-                            vy=0.0,
-                            brake_status=virtual_vehicle_brake,
-                        )
+                    ego_vehicle_pitch_from_acceleration = 0.0
+
+            ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
+                                 ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
+                                 ego_vehicle_ref_poses[4]]
+            for i in range(num_Sv):
+                vehicle_pose = geometry.pose(traffic_manager.traffic_s[i], traffic_manager.traffic_l[i])
+                local_pose = host_vehicle_coordinate_transformation(vehicle_pose, ego_vehicle_poses)
+                traffic_manager.traffic_brake_status_update(i)
+                virtual_traffic_sim_info_manager.update_virtual_vehicle_state(
+                    vehicle_id=i, vehicle_type=traffic_manager.traffic_type[i],
+                    x=local_pose[0], y=-local_pose[1], z=local_pose[2],
+                    yaw=-local_pose[3], pitch=-local_pose[4],
+                    acc=traffic_manager.traffic_alon[i], vx=traffic_manager.traffic_v[i], vy=0.0,
+                    brake_status=traffic_manager.traffic_brake_status[i])
+            if not session.started:
+                front_s_t[:20] = [round(traffic_manager.traffic_s[0], 3)] * 20
+                front_v_t = [0.0] * 40
+                front_a_t = [0.0] * 40
 
             virtual_traffic_sim_info_manager.construct_hololens_info_msg()
             traffic_manager.construct_traffic_sim_info_msg(sim_t=sim_t)
@@ -1090,7 +1013,7 @@ def main_double_lane_behavior_generation():
                 s=front_s_t,
                 v=front_v_t,
                 a=front_a_t,
-                sim_start=traffic_manager.sim_start,
+                sim_start=session.running,
             )
 
             virtual_traffic_sim_info_manager.publish_virtual_sim_info()
@@ -1100,10 +1023,8 @@ def main_double_lane_behavior_generation():
             road_ref_correction_msg = road_reference_correction_msg_prep(ego_vehicle_pitch_from_acceleration)
             road_ref_pub.publish(road_ref_correction_msg)
 
-        except IndexError:
-            print("Index error detected.")
-        except RuntimeError:
-            print("Runtime error detected.")
+        except (IndexError, RuntimeError) as error:
+            rospy.logwarn_throttle(2.0, "Behavior-generation update failed: %s", error)
 
         rate.sleep()
 

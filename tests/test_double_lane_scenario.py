@@ -17,6 +17,19 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 from double_lane_scenario import DoubleLaneScenario, ScenarioSession, LaneMapGeometry
 
 
+def fixture_scenario():
+    # Keep regressions reproducible when the user edits the live scenario JSON.
+    return {
+        'ego_vehicle': {'lane_id': 0, 'initial_distance': 0.0},
+        'vehicles': [
+            {'id': 0, 'type': 0, 'lane_id': 0, 'initial_distance': 8.0},
+            {'id': 1, 'type': 0, 'lane_id': 1, 'initial_distance': 18.0},
+            {'id': 2, 'type': 0, 'lane_id': 1, 'initial_distance': 10.0},
+            {'id': 3, 'type': 1, 'lane_id': 1, 'initial_distance': 138.0},
+        ],
+    }
+
+
 class MemoryTraffic:
     def __init__(self):
         self.traffic_s = [0.0] * 12
@@ -34,7 +47,7 @@ class MemoryTraffic:
 
 class ScenarioTests(unittest.TestCase):
     def setUp(self):
-        self.data = json.loads((ROOT / 'config/double_lane_scenario.json').read_text())
+        self.data = fixture_scenario()
 
     def test_default_order_and_unordered_json_entries(self):
         self.data['vehicles'].reverse()
@@ -144,11 +157,13 @@ except ImportError:
 
 @unittest.skipIf(runtime is None, 'Source the ROS/catkin workspace for integration checks')
 class RuntimeTests(unittest.TestCase):
-    def run_scene(self, frames, data=None):
+    def run_scene(self, frames, data=None, runtime_module=None, extra_params=None, trigger_frames=()):
         """Run the real node loop/controllers/message builders with fake ROS I/O and road."""
+        node = runtime_module or runtime
+        manager_name = "BehaviorTrafficManager" if runtime_module else "CMI_traffic_sim"
         published = {}
         state = SimpleNamespace(index=0, manager=None)
-        manager_class = runtime.CMI_traffic_sim
+        manager_class = getattr(node, manager_name)
 
         class Publisher:
             def __init__(self, topic, *args, **kwargs):
@@ -159,7 +174,8 @@ class RuntimeTests(unittest.TestCase):
                 published[self.topic].append(copy.deepcopy(msg))
 
         class Road:
-            def __init__(self, filename, *args, **kwargs):
+            def __init__(self, filename=None, *args, **kwargs):
+                filename = filename or kwargs["map_filename"]
                 self.side = Path(filename).name == 'lane1.csv'
                 self.origin = 1000.0 if self.side else 0.0
 
@@ -185,8 +201,8 @@ class RuntimeTests(unittest.TestCase):
                         2.0 if self.side else 0.0, 0.1 if self.side else 0.0,
                         0.02 if self.side else 0.0]
 
-            def find_ego_frenet_pose(self, pose, yaw, vn, ve):
-                return 0.0, 0.0, vn, ve
+            def find_ego_frenet_pose(self, ego_poses, ego_yaw, vy, vx):
+                return 0.0, 0.0, vy, vx
 
         def make_manager(*args, **kwargs):
             state.manager = manager_class(*args, **kwargs)
@@ -197,6 +213,8 @@ class RuntimeTests(unittest.TestCase):
                 return True
             now, pose, start = frames[state.index]
             state.manager.sim_start = start
+            if state.index in trigger_frames:
+                state.manager.behavior_generation_requested = True
             if pose is not None:
                 msg = Odometry()
                 msg.pose.pose.position.x = pose
@@ -207,23 +225,25 @@ class RuntimeTests(unittest.TestCase):
             state.index += 1
 
         with tempfile.TemporaryDirectory() as directory:
-            filename = ROOT / 'config/double_lane_scenario.json'
-            if data is not None:
-                filename = Path(directory) / 'scenario.json'
-                filename.write_text(json.dumps(data))
+            filename = Path(directory) / 'scenario.json'
+            filename.write_text(json.dumps(data if data is not None else fixture_scenario()))
             params = {'~scenario_file': str(filename), '/map_0': 'lane0.csv',
                       '/map_1': 'lane1.csv', '/spd_map': 'unused',
                       '/run_sim': True, '/use_preview': True, '/use_acceleration_pitch': False}
-            with patch.multiple(runtime.rospy, init_node=lambda *a: None,
+            params.update(extra_params or {})
+            with patch.multiple(node.rospy, init_node=lambda *a: None,
                                 Publisher=Publisher, Subscriber=lambda *a, **kw: None,
                                 Rate=lambda *a: SimpleNamespace(sleep=sleep),
                                 get_param=lambda key, default=None: params.get(key, default),
                                 is_shutdown=is_shutdown, loginfo=lambda *a: None,
                                 logwarn_throttle=lambda *a: None), \
-                 patch.object(runtime, 'CMI_traffic_sim', make_manager), \
-                 patch.object(runtime, 'road_reader', Road), \
-                 patch.object(runtime, 'time', SimpleNamespace(monotonic=lambda: frames[state.index][0])):
-                runtime.main_double_lane_following()
+                 patch.object(node, manager_name, make_manager), \
+                 patch.object(node, 'road_reader', Road), \
+                 patch.object(node, 'time', SimpleNamespace(monotonic=lambda: frames[state.index][0])):
+                if runtime_module:
+                    node.main_double_lane_behavior_generation()
+                else:
+                    node.main_double_lane_following()
         return published
 
     def test_messages_before_start_and_profile_origin_and_pause(self):
@@ -264,7 +284,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(traffic[1].sim_T, 1)
 
     def test_lane_change_state_survives_pause(self):
-        data = json.loads((ROOT / 'config/double_lane_scenario.json').read_text())
+        data = fixture_scenario()
         data['vehicles'][0]['initial_distance'] = 30
         data['vehicles'][3]['initial_distance'] = 26
         messages = self.run_scene([(0, 100, True), (0.1, 100, True), (0.2, 100, False),
