@@ -19,7 +19,7 @@ from traffic_runtime import (
     compute_vehicle_following_acceleration,
     update_vehicle_against_stationary,
 )
-from sim_env_manager import stanley_vehicle_controller
+from sim_env_manager import lateral_vehicle_controller
 from utils import IDM, host_vehicle_coordinate_transformation
 
 
@@ -113,6 +113,13 @@ def main_double_lane_following():
         float(rospy.get_param("/side_lane_change_duration", 4.0)),
         0.1,
     )
+    max_steering_rate = float(rospy.get_param("/max_steering_rate", 2.0))
+    max_jerk = float(rospy.get_param("/max_jerk", 5.0))
+    min_lookahead_distance = float(rospy.get_param("/min_lookahead_distance", 15.0))
+    if not all(np.isfinite(value) and value >= 0.0 for value in (max_steering_rate, max_jerk)):
+        raise ValueError("max_steering_rate and max_jerk must be finite and nonnegative")
+    if not np.isfinite(min_lookahead_distance) or min_lookahead_distance <= 0.0:
+        raise ValueError("min_lookahead_distance must be finite and positive")
     lane_change_progress = 0.0
     lane_change_active = False
     lane_change_controller = None
@@ -215,15 +222,18 @@ def main_double_lane_following():
                                 traffic_manager.traffic_s[lane_change_vehicle_id],
                                 lane_id=1,
                             )
-                            lane_change_controller = stanley_vehicle_controller(
+                            lane_change_controller = lateral_vehicle_controller(
                                 x_init=side_pose[0],
                                 y_init=side_pose[1],
                                 z_init=side_pose[2],
                                 yaw_init=side_pose[3],
                                 pitch_init=side_pose[4],
                                 car_length=float(rospy.get_param("/car_length", 3.5)),
+                                max_steering_rate=max_steering_rate,
+                                max_jerk=max_jerk,
                             )
                             lane_change_controller.v = traffic_manager.traffic_v[lane_change_vehicle_id]
+                            lane_change_controller.acc = traffic_manager.traffic_alon[lane_change_vehicle_id]
                         lane_change_active = True
 
                     if moving_vehicle_count > 2 and lane_change_active:
@@ -245,7 +255,7 @@ def main_double_lane_following():
                             emergency_decel_margin=emergency_decel_margin,
                         )
                         lane_change_goal_s = traffic_manager.traffic_s[lane_change_vehicle_id] + max(
-                            6.0,
+                            min_lookahead_distance,
                             traffic_manager.traffic_v[lane_change_vehicle_id] * 0.6,
                         )
                         lane_change_goal = geometry.pose(
@@ -253,7 +263,6 @@ def main_double_lane_following():
                             lane_id=0,
                         )
                         lane_change_controller.pure_pursuit_controller(lane_change_goal)
-                        lane_change_controller.acc = commanded_acc
                         lane_change_controller.update_vehicle_state(
                             acc=commanded_acc,
                             z=lane_change_goal[2],
@@ -269,7 +278,7 @@ def main_double_lane_following():
                         )
                         traffic_manager.traffic_s[lane_change_vehicle_id] = lane_change_s
                         traffic_manager.traffic_v[lane_change_vehicle_id] = lane_change_controller.v
-                        traffic_manager.traffic_alon[lane_change_vehicle_id] = commanded_acc
+                        traffic_manager.traffic_alon[lane_change_vehicle_id] = lane_change_controller.acc
                         traffic_manager.traffic_l[lane_change_vehicle_id] = 1.0 - lane_change_progress
                         update_idm_followers(
                             traffic_manager,

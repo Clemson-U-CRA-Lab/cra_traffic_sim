@@ -102,7 +102,7 @@ def main_urban_roadside_cut_in_scenario():
                     veh_pitch = traffic_vehicle_goal_pose[4] # Use ego lane's pitch information
                     traffic_manager.global_vehicle_update(veh_ID=i, x=veh_x, y=veh_y, z=veh_z, yaw=veh_yaw, pitch=veh_pitch)
                     if i == exit_vehicle_id:
-                        exit_veh_control = stanley_vehicle_controller(x_init=veh_x, y_init=veh_y, z_init=veh_z, yaw_init=veh_yaw, pitch_init=veh_pitch, car_length=mach_e_length)
+                        exit_veh_control = lateral_vehicle_controller(x_init=veh_x, y_init=veh_y, z_init=veh_z, yaw_init=veh_yaw, pitch_init=veh_pitch, car_length=mach_e_length)
                 continue
             else:
                 msg_counter += 1

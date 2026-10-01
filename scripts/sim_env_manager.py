@@ -17,36 +17,51 @@ import numpy as np
 import math
 import os
 from utils import *
-class stanley_vehicle_controller():
-    def __init__(self, x_init, y_init, z_init, yaw_init, pitch_init, car_length):
+class lateral_vehicle_controller():
+    def __init__(self, x_init, y_init, z_init, yaw_init, pitch_init, car_length,
+                 max_steering_rate=2.0, max_jerk=5.0):
         self.x = x_init
         self.y = y_init
         self.z = z_init
         self.yaw = yaw_init
         self.pitch = pitch_init
         self.steering = 0.0
+        self.target_steering = 0.0
+        self.max_steering_rate = float(max_steering_rate)  # rad/s
+        self.max_jerk = float(max_jerk)  # m/s^3
+        if not all(math.isfinite(value) and value >= 0.0
+                   for value in (self.max_steering_rate, self.max_jerk)):
+            raise ValueError("Steering rate and jerk limits must be finite and nonnegative")
         self.acc = 0.0
         self.v = 0.0
         self.L = car_length
-    
+
+    def control_signal_update(self, steering, acc, dt):
+        dt = max(float(dt), 0.0)
+        delta_steering = np.clip(steering - self.steering,
+                                 -self.max_steering_rate * dt, self.max_steering_rate * dt)
+        self.steering += float(delta_steering)
+        delta_acc = np.clip(acc - self.acc, -self.max_jerk * dt, self.max_jerk * dt)
+        self.acc += float(delta_acc)
+
     def update_vehicle_state(self, acc, z, pitch, dt):
+        dt = max(float(dt), 0.0)
+        self.control_signal_update(self.target_steering, acc, dt)
         self.x += self.v * math.cos(self.yaw) * dt
         self.y += self.v * math.sin(self.yaw) * dt
         self.yaw += self.v * math.tan(self.steering) / self.L * dt
         self.v += self.acc * dt
         self.z = z
         self.pitch = pitch
-        self.acc = acc
-    
+
     def pure_pursuit_controller(self, goal_pose):
         ego_pose = [self.x, self.y, self.z, self.yaw, self.pitch]
-        
         local_veh_pose = host_vehicle_coordinate_transformation(goal_pose, ego_pose)
-        
-        l = (local_veh_pose[0] ** 2 + local_veh_pose[1] ** 2) ** 0.5
-        r = l ** 2 / (2 * local_veh_pose[1])
-        self.steering = np.clip(math.atan(6 / r), -0.5, 0.5)
-    
+        distance_squared = local_veh_pose[0] ** 2 + local_veh_pose[1] ** 2
+        # Equivalent to atan(6 / r), without dividing by lateral error at zero.
+        curvature = 2.0 * local_veh_pose[1] / max(distance_squared, 1e-12)
+        self.target_steering = float(np.clip(math.atan(6 * curvature), -0.5, 0.5))
+
     def get_traffic_pose(self):
         return [self.x, self.y, self.z, self.yaw, self.pitch]
     

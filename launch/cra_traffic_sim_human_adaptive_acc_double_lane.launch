@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="pv_speed_profile" default="I85_ftp1_ITIC_HAMPC.csv" />
+    <arg name="pv_speed_profile" default="I85_ftp_short.csv" />
     <arg name="dir" default="0"/>
     <arg name="use_preview" default="1"/>
     <arg name="sim_run" default="0"/>
@@ -9,6 +9,10 @@
     <arg name="scenario_file" default="$(find cra_traffic_sim)/config/double_lane_scenario.json"/>
     <arg name="side_lane_stationary_safety_buffer" default="3.0"/>
     <arg name="side_lane_change_duration" default="4.0"/>
+    <!-- Lane-change control limits: rad/s, m/s^3, and meters. -->
+    <arg name="max_steering_rate" default="2.0"/>
+    <arg name="max_jerk" default="5.0"/>
+    <arg name="min_lookahead_distance" default="10.0"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
@@ -19,6 +23,9 @@
     <param name="use_preview" value="$(arg use_preview)"/>
     <param name="side_lane_stationary_safety_buffer" value="$(arg side_lane_stationary_safety_buffer)"/>
     <param name="side_lane_change_duration" value="$(arg side_lane_change_duration)"/>
+    <param name="max_steering_rate" value="$(arg max_steering_rate)"/>
+    <param name="max_jerk" value="$(arg max_jerk)"/>
+    <param name="min_lookahead_distance" value="$(arg min_lookahead_distance)"/>
     <param name="track_style" value="Rally"/>
     <node pkg="cra_traffic_sim" type="car_following_double_lane.py" name="CRA_Digital_Twin_Traffic" output="screen">
         <param name="scenario_file" value="$(arg scenario_file)"/>
