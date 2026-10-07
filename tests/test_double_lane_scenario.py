@@ -157,7 +157,7 @@ except ImportError:
 
 @unittest.skipIf(runtime is None, 'Source the ROS/catkin workspace for integration checks')
 class RuntimeTests(unittest.TestCase):
-    def run_scene(self, frames, data=None, runtime_module=None, extra_params=None, trigger_frames=()):
+    def run_scene(self, frames, data=None, runtime_module=None, extra_params=None, trigger_frames=(), side_grade=0.0):
         """Run the real node loop/controllers/message builders with fake ROS I/O and road."""
         node = runtime_module or runtime
         manager_name = "BehaviorTrafficManager" if runtime_module else "CMI_traffic_sim"
@@ -198,7 +198,8 @@ class RuntimeTests(unittest.TestCase):
                 if lane_id != 0:
                     raise AssertionError("Independent lane maps must not add a synthetic lane offset")
                 return [distance - self.origin, 7.0 if self.side else 0.0,
-                        2.0 if self.side else 0.0, 0.1 if self.side else 0.0,
+                        2.0 + side_grade * (distance - self.origin) if self.side else 0.0,
+                        0.1 if self.side else 0.0,
                         0.02 if self.side else 0.0]
 
             def find_ego_frenet_pose(self, ego_poses, ego_yaw, vy, vx):
@@ -294,7 +295,10 @@ class RuntimeTests(unittest.TestCase):
         # The merge starts on the real side map and targets the lane-0 centerline.
         self.assertEqual(holograms[0].S_v_y[2], -7)
         self.assertEqual(holograms[0].S_v_yaw[2], -0.1)
-        self.assertEqual(holograms[1].S_v_z[2], 0)
+        # The target lane is at z=0, but the original side-lane path stays at z=2.
+        for message in holograms:
+            self.assertEqual(message.S_v_z[2], 2)
+            self.assertEqual(message.S_v_pitch[2], -0.02)
         self.assertLess(traffic[1].S_v_l[2], 1)
         for index in (2, 3, 4):
             self.assertEqual(traffic[index].S_v_l[2], traffic[1].S_v_l[2])
@@ -302,6 +306,56 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(holograms[index].S_v_yaw[2], holograms[1].S_v_yaw[2])
         self.assertLess(traffic[5].S_v_l[2], traffic[1].S_v_l[2])
 
+    def test_lane_change_tracks_original_path_elevation(self):
+        data = fixture_scenario()
+        data['vehicles'][0]['initial_distance'] = 30
+        data['vehicles'][3]['initial_distance'] = 26
+        for grade in (-0.05, 0.05):
+            with self.subTest(grade=grade):
+                messages = self.run_scene(
+                    [(0, 100, True), (0.1, 100, True), (0.2, 100, True),
+                     (0.3, 100, False), (10, 100, False), (11, 100, True),
+                     (11.1, 100, True)], data, side_grade=grade)
+                traffic = messages['/traffic_sim_info_mache']
+                holograms = messages['/virtual_sim_info_mache']
+                for state, pose in zip(traffic, holograms):
+                    # Ego's height/pitch are zero in the fixture, so local z equals world z.
+                    self.assertAlmostEqual(pose.S_v_z[2], 2.0 + grade * state.S_v_s[2])
+                    self.assertEqual(pose.S_v_pitch[2], -0.02)
+                self.assertNotEqual(holograms[0].S_v_z[2], holograms[2].S_v_z[2])
+                self.assertEqual(holograms[2].S_v_z[2], holograms[4].S_v_z[2])
+
+
+    def test_obstacle_following_stays_active_through_stop_and_resume(self):
+        data = fixture_scenario()
+        data['vehicles'][0]['initial_distance'] = 30
+        data['vehicles'][3]['initial_distance'] = 26
+        frames = [(i * 0.1, 100, True) for i in range(101)]
+        frames += [(50, 105, False), (100, 110, False), (101, 110, True), (101.1, 110, True)]
+        messages = self.run_scene(frames, data)
+        traffic = messages['/traffic_sim_info_mache']
+        positions = [state.S_v_s[1] for state in traffic]
+        self.assertEqual(len(traffic), len(frames))
+        for before, after in zip(positions, positions[1:]):
+            self.assertGreaterEqual(after - before, -1e-9)
+            self.assertLessEqual(after - before, 0.201)
+        self.assertEqual(traffic[-1].S_v_sv[1], 0)
+        self.assertLessEqual(positions[-1], 120)  # Truck at 126, clearance 6m.
+        self.assertEqual(positions[-5:], [positions[-5]] * 5)
+        self.assertGreater(traffic[-1].S_v_s[0], positions[-1])
+
+    def test_stationary_braking_integrates_only_until_rest(self):
+        from traffic_runtime import update_vehicle_against_stationary
+        manager = SimpleNamespace(traffic_s=[32.0], traffic_v=[0.1], traffic_alon=[0.0])
+        idm = SimpleNamespace(
+            safe_IDM_acceleration=lambda **kw: -6.0,
+            CBF_acceleration_filter=lambda **kw: (kw['commanded_acc'], None, None, None),
+        )
+        for _ in range(5):
+            self.assertTrue(update_vehicle_against_stationary(
+                manager, idm, 0, 40.0, 1.0, 15.0, -6.0, 3.0, following_active=True))
+            self.assertAlmostEqual(manager.traffic_s[0], 32.0 + 0.1 ** 2 / 12.0)
+            self.assertEqual(manager.traffic_v[0], 0)
 
     def test_real_map_files_use_independent_centerlines(self):
         import numpy as np

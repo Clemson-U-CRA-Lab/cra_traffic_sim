@@ -1,18 +1,18 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="pv_speed_profile" default="I85_ftp_short.csv" />
+    <arg name="pv_speed_profile" default="I85_ftp_sec_2.csv" />
     <arg name="dir" default="0"/>
     <arg name="use_preview" default="1"/>
     <arg name="sim_run" default="0"/>
     <arg name="site_map_0" default="CMI_outerloop_mach_e.csv"/>
     <arg name="site_map_1" default="CMI_outerloop_mach_e_wider_lane.csv"/>
     <arg name="scenario_file" default="$(find cra_traffic_sim)/config/double_lane_scenario.json"/>
-    <arg name="side_lane_stationary_safety_buffer" default="3.0"/>
-    <arg name="side_lane_change_duration" default="4.0"/>
+    <arg name="side_lane_stationary_safety_buffer" default="2.0"/>
+    <arg name="side_lane_change_duration" default="3.0"/>
     <!-- Lane-change control limits: rad/s, m/s^3, and meters. -->
-    <arg name="max_steering_rate" default="2.0"/>
+    <arg name="max_steering_rate" default="1.0"/>
     <arg name="max_jerk" default="5.0"/>
-    <arg name="min_lookahead_distance" default="10.0"/>
+    <arg name="min_lookahead_distance" default="15.0"/>
 
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>

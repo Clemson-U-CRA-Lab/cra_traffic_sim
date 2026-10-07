@@ -6,33 +6,33 @@
   "vehicles": [
     {
       "id": 0,
-      "type": 3,
+      "type": 2,
       "lane_id": 0,
-      "initial_distance": 8.0
+      "initial_distance": 10.0
     },
     {
       "id": 1,
       "type": 2,
       "lane_id": 1,
-      "initial_distance": 9.0
+      "initial_distance": 1.0
     },
     {
       "id": 2,
-      "type": 2,
+      "type": 3,
       "lane_id": 1,
-      "initial_distance": 1.0
+      "initial_distance": -9.0
     },
     {
       "id": 3,
       "type": 2,
       "lane_id": 1,
-      "initial_distance": -7.0
+      "initial_distance": -18.0
     },
     {
       "id": 4,
       "type": 3,
       "lane_id": 1,
-      "initial_distance": -15.0
+      "initial_distance": -28.0
     }
   ]
 }

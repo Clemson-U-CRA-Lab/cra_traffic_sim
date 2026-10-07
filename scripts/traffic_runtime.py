@@ -213,8 +213,13 @@ def update_vehicle_against_stationary(
     cbf_alpha=8.0,
     emergency_decel_margin=2.0,
     detection_buffer=2.0,
+    following_active=False,
 ):
-    """Use a stationary vehicle as leader once it enters the stopping envelope."""
+    """Detect a stationary leader, or keep following it after initial detection.
+
+    Pass the previous return value as following_active to latch obstacle following
+    until the scenario is reset, even as braking shrinks the detection envelope.
+    """
     ego_s = float(traffic_manager.traffic_s[vehicle_id])
     ego_v = max(float(traffic_manager.traffic_v[vehicle_id]), 0.0)
     gap = float(stationary_s) - ego_s
@@ -223,7 +228,7 @@ def update_vehicle_against_stationary(
     time_headway_distance = max(float(cbf_s0), 0.0) + max(float(cbf_time_headway), 0.0) * ego_v
     detection_distance = max(stopping_distance, time_headway_distance) + max(float(detection_buffer), 0.0)
 
-    if gap > detection_distance:
+    if not following_active and gap > detection_distance:
         return False
 
     commanded_acc = idm_control.safe_IDM_acceleration(
@@ -247,6 +252,10 @@ def update_vehicle_against_stationary(
         cbf_T=cbf_time_headway,
         emergency_decel_margin=emergency_decel_margin,
     )
+    commanded_acc = float(np.clip(commanded_acc, acc_min, acc_max))
+    dt = max(float(dt), 0.0)
+    if ego_v == 0.0 and commanded_acc < 0.0:
+        commanded_acc = 0.0
     next_s, next_v, next_a = clamp_vehicle_state(
         ego_s,
         ego_v,
@@ -256,6 +265,13 @@ def update_vehicle_against_stationary(
         acc_min,
         acc_max,
     )
+
+    # Integrate only up to the stopping instant, not backward for the rest of dt.
+    if commanded_acc < 0.0 and ego_v + commanded_acc * dt <= 0.0:
+        stop_dt = ego_v / -commanded_acc
+        next_s = ego_s + ego_v * stop_dt + 0.5 * commanded_acc * stop_dt ** 2
+        next_v = 0.0
+        next_a = 0.0
 
     clearance = max(float(cbf_s0), 0.0)
     if next_s >= float(stationary_s) - clearance:

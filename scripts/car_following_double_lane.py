@@ -100,10 +100,10 @@ def main_double_lane_following():
     side_acc_min = float(rospy.get_param("/side_lane_acceleration_lower_limit", -6.0))
     side_acc_max = float(rospy.get_param("/side_lane_acceleration_upper_limit", 3.0))
     cbf_enable = get_bool_param(rospy, "/side_lane_cbf_enable", True)
-    cbf_alpha = float(rospy.get_param("/side_lane_cbf_alpha", 8.0))
-    cbf_s0 = float(rospy.get_param("/side_lane_cbf_s0", 6.0))
-    cbf_time_headway = float(rospy.get_param("/side_lane_cbf_T", 0.5))
-    emergency_decel_margin = float(rospy.get_param("/side_lane_cbf_emergency_decel_margin", 2.0))
+    cbf_alpha = float(rospy.get_param("/side_lane_cbf_alpha", 1.0))
+    cbf_s0 = float(rospy.get_param("/side_lane_cbf_s0", 5.0))
+    cbf_time_headway = float(rospy.get_param("/side_lane_cbf_T", 0.8))
+    emergency_decel_margin = float(rospy.get_param("/side_lane_cbf_emergency_decel_margin", 1.0))
     stationary_safety_buffer = max(
         float(rospy.get_param("/side_lane_stationary_safety_buffer", 2.0)),
         0.0,
@@ -123,6 +123,7 @@ def main_double_lane_following():
     lane_change_progress = 0.0
     lane_change_active = False
     lane_change_controller = None
+    obstacle_following = False
     ego_pitch = 0.0
     initial_speed, initial_profile_distance, _ = traffic_map.find_speed_profile_information(sim_t=0.0)
     session = ScenarioSession(scenario, float(np.clip(initial_speed, 0.0, speed_limit)))
@@ -207,6 +208,7 @@ def main_double_lane_following():
                         cbf_alpha=cbf_alpha,
                         emergency_decel_margin=emergency_decel_margin,
                         detection_buffer=stationary_safety_buffer,
+                        following_active=obstacle_following,
                     )
                     if not obstacle_following:
                         traffic_manager.traffic_s[1] = traffic_manager.traffic_s[0] + leader_offset
@@ -263,10 +265,11 @@ def main_double_lane_following():
                             lane_id=0,
                         )
                         lane_change_controller.pure_pursuit_controller(lane_change_goal)
+                        # Advance horizontal motion first; sample road height at the new position below.
                         lane_change_controller.update_vehicle_state(
                             acc=commanded_acc,
-                            z=lane_change_goal[2],
-                            pitch=lane_change_goal[4],
+                            z=lane_change_controller.z,
+                            pitch=lane_change_controller.pitch,
                             dt=dt,
                         )
                         lane_change_controller.v = float(
@@ -276,6 +279,11 @@ def main_double_lane_following():
                         lane_change_s, _, _ = traffic_map.find_ego_vehicle_distance_reference(
                             np.array([[lane_change_pose[0]], [lane_change_pose[1]], [lane_change_pose[2]]])
                         )
+                        # Keep following the original side-lane elevation profile, even while
+                        # steering toward lane 0. The lookahead point supplies steering only.
+                        original_path_pose = geometry.pose(lane_change_s, lane_id=1)
+                        lane_change_controller.z = original_path_pose[2]
+                        lane_change_controller.pitch = original_path_pose[4]
                         traffic_manager.traffic_s[lane_change_vehicle_id] = lane_change_s
                         traffic_manager.traffic_v[lane_change_vehicle_id] = lane_change_controller.v
                         traffic_manager.traffic_alon[lane_change_vehicle_id] = lane_change_controller.acc
