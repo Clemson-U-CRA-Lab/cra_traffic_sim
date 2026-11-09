@@ -12,13 +12,13 @@
     },
     {
       "id": 1,
-      "type": 2,
+      "type": 1,
       "lane_id": 1,
       "initial_distance": 1.0
     },
     {
       "id": 2,
-      "type": 3,
+      "type": 1,
       "lane_id": 1,
       "initial_distance": -9.0
     },
