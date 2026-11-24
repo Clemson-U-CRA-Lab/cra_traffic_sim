@@ -561,6 +561,12 @@ class hololens_message_manager():
         self.S_v_vy = [0.0] * max_num_vehicles
         self.S_v_brake_status = [False] * max_num_vehicles
 
+        self.S_v_global_x = [0.0] * max_num_vehicles
+        self.S_v_global_y = [0.0] * max_num_vehicles
+        self.S_v_global_z = [0.0] * max_num_vehicles
+        self.S_v_global_pitch = [0.0] * max_num_vehicles
+        self.S_v_global_yaw = [0.0] * max_num_vehicles
+
         self.TL_type = [0.0] * max_num_traffic_lights
         self.TL_ID = [0.0] * max_num_traffic_lights
         self.TL_status = [0.0] * max_num_traffic_lights
@@ -585,7 +591,11 @@ class hololens_message_manager():
         self.pub_virtual_traffic_info = rospy.Publisher(
             '/virtual_sim_info_mache', hololens_info, queue_size=1)
     
-    def update_virtual_vehicle_state(self, vehicle_id, x, y, z, pitch, yaw, acc, vx, vy, brake_status, vehicle_type=0):
+    def update_virtual_vehicle_state(self, vehicle_id, x, y, z, pitch, yaw, acc, vx, vy,
+                                     brake_status, vehicle_type=0, global_x=0.0,
+                                     global_y=0.0, global_z=0.0, global_pitch=0.0,
+                                     global_yaw=0.0):
+        """Store ego-relative state and optional global pose for one vehicle."""
         self.virtual_vehicle_id[vehicle_id] = vehicle_id
         self.S_v_type[vehicle_id] = vehicle_type
         self.S_v_x[vehicle_id] = x
@@ -597,6 +607,11 @@ class hololens_message_manager():
         self.S_v_vx[vehicle_id] = vx
         self.S_v_vy[vehicle_id] = vy
         self.S_v_brake_status[vehicle_id] = brake_status
+        self.S_v_global_x[vehicle_id] = global_x
+        self.S_v_global_y[vehicle_id] = global_y
+        self.S_v_global_z[vehicle_id] = global_z
+        self.S_v_global_pitch[vehicle_id] = global_pitch
+        self.S_v_global_yaw[vehicle_id] = global_yaw
     
     def update_ego_state(self, serial_id, ego_x, ego_y, ego_z, ego_pitch, ego_yaw, ego_acc, ego_omega, ego_v):
         self.serial = serial_id
@@ -627,6 +642,11 @@ class hololens_message_manager():
             self.hololens_message.S_v_brake_status[i] = self.S_v_brake_status[i]
             self.hololens_message.S_v_vx[i] = self.S_v_vx[i]
             self.hololens_message.S_v_vy[i] = self.S_v_vy[i]
+            self.hololens_message.S_v_global_x[i] = self.S_v_global_x[i]
+            self.hololens_message.S_v_global_y[i] = self.S_v_global_y[i]
+            self.hololens_message.S_v_global_z[i] = self.S_v_global_z[i]
+            self.hololens_message.S_v_global_pitch[i] = self.S_v_global_pitch[i]
+            self.hololens_message.S_v_global_yaw[i] = self.S_v_global_yaw[i]
 
         for j in range(self.hololens_message.num_TL):
             self.hololens_message.TL_Type[j] = self.TL_type[j]

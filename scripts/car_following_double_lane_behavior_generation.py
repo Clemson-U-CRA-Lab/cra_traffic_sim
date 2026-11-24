@@ -998,6 +998,8 @@ def main_double_lane_behavior_generation():
                     vehicle_id=i, vehicle_type=traffic_manager.traffic_type[i],
                     x=local_pose[0], y=-local_pose[1], z=local_pose[2],
                     yaw=-local_pose[3], pitch=-local_pose[4],
+                    global_x=vehicle_pose[0], global_y=vehicle_pose[1], global_z=vehicle_pose[2],
+                    global_pitch=vehicle_pose[4], global_yaw=vehicle_pose[3],
                     acc=traffic_manager.traffic_alon[i], vx=traffic_manager.traffic_v[i], vy=0.0,
                     brake_status=traffic_manager.traffic_brake_status[i])
             if not session.started:
