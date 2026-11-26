@@ -19,6 +19,10 @@ class IDM():
         self.T = T
 
     def IDM_acceleration(self, front_v, ego_v, front_s, ego_s):
+        return np.clip(self.raw_IDM_acceleration(front_v, ego_v, front_s, ego_s), -6, 3)
+
+    def raw_IDM_acceleration(self, front_v, ego_v, front_s, ego_s):
+        """Unclipped demand for MOBIL prediction; actuation still uses limits."""
         s_safe = (
             self.s0
             + ego_v * self.T
@@ -30,7 +34,6 @@ class IDM():
             - (ego_v / self.v0) ** 4
             - (s_safe / (front_s - ego_s - self.s0)) ** 2
         )
-        acc = np.clip(acc, -6, 3)
         return acc
 
     def safe_IDM_acceleration(self, front_v, ego_v, front_s, ego_s, fallback_acc=-6.0):

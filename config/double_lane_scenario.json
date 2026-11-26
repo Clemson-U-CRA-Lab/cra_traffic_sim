@@ -1,9 +1,40 @@
 {
-  "ego_vehicle": {"lane_id": 0, "initial_distance": 0.0},
+  "ego_vehicle": {
+    "lane_id": 0,
+    "initial_distance": 0.0
+  },
   "vehicles": [
-    {"id": 0, "type": 0, "lane_id": 0, "initial_distance": 9.0},
-    {"id": 1, "type": 2, "lane_id": 1, "initial_distance": 15.0},
-    {"id": 2, "type": 3, "lane_id": 1, "initial_distance": 7.0},
-    {"id": 3, "type": 1, "lane_id": 1, "initial_distance": 35.0}
+    {
+      "id": 0,
+      "type": 0,
+      "lane_id": 0,
+      "initial_distance": 55.0,
+      "operation_mode": "driving",
+      "lane_layout": "single_lane"
+    },
+    {
+      "id": 1,
+      "type": 2,
+      "lane_id": 1,
+      "initial_distance": 25.0,
+      "operation_mode": "driving",
+      "lane_layout": "double_lane"
+    },
+    {
+      "id": 2,
+      "type": 3,
+      "lane_id": 1,
+      "initial_distance": 15.0,
+      "operation_mode": "driving",
+      "lane_layout": "double_lane"
+    },
+    {
+      "id": 3,
+      "type": 1,
+      "lane_id": 1,
+      "initial_distance": 70.0,
+      "operation_mode": "parking",
+      "lane_layout": "single_lane"
+    }
   ]
 }

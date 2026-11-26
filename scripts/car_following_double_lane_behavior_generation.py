@@ -11,6 +11,8 @@ from std_msgs.msg import Int8
 
 from sim_env_manager import CMI_traffic_sim, hololens_message_manager, road_reader
 from utils import IDM, host_vehicle_coordinate_transformation
+from configured_traffic import ConfiguredTraffic
+from traffic_runtime import build_front_preview as build_configured_preview
 from double_lane_scenario import BehaviorGenerationScenario, ScenarioSession, LaneMapGeometry
 from behavior_generation_optimizer import preceding_vehicle_spd_profile_generation
 
@@ -649,6 +651,7 @@ def main_double_lane_behavior_generation():
     front_vehicle_stop_target_logged = False
 
     session = ScenarioSession(scenario, float(np.clip(init_spd_t, 0.0, front_vehicle_speed_limit)))
+    configured = ConfiguredTraffic(scenario, geometry, idm_control, rospy.get_param) if scenario.explicit_behavior else None
     front_s_t = [0.0] * 40
     front_v_t = [0.0] * 40
     front_a_t = [0.0] * 40
@@ -692,12 +695,12 @@ def main_double_lane_behavior_generation():
                 ego_omega=traffic_manager.ego_omega,
             )
 
-            ego_vehicle_ref_poses = geometry.pose(s_ego_frenet_0, lane_id=0)
+            ego_vehicle_ref_poses = geometry.pose(s_ego_frenet_0, lane_id=scenario.ego["lane_id"])
             _, yaw_s, v_longitudinal, v_lateral = traffic_map_manager_0.find_ego_frenet_pose(
                 ego_poses=traffic_manager.ego_pose_ref, ego_yaw=traffic_manager.ego_yaw,
                 vy=traffic_manager.ego_v_north, vx=traffic_manager.ego_v_east)
             traffic_manager.ego_vehicle_frenet_update(
-                s=s_ego_frenet_0, l=0.0, sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
+                s=s_ego_frenet_0, l=float(scenario.ego["lane_id"]), sv=v_longitudinal, lv=v_lateral, yaw_s=yaw_s)
 
             run_dir_msg = Int8()
             run_dir_msg.data = run_direction
@@ -712,6 +715,7 @@ def main_double_lane_behavior_generation():
 
             msg_counter += 1
             if session.running:
+                previous_front = (traffic_manager.traffic_s[0], traffic_manager.traffic_v[0], traffic_manager.traffic_alon[0])
                 cycle_ref = get_cycle_reference(traffic_map_manager_0, sim_t, ego_s_init_0, init_gap)
                 if front_vehicle_stop_target_s is not None and not front_vehicle_stop_target_logged:
                     rospy.loginfo(
@@ -949,36 +953,46 @@ def main_double_lane_behavior_generation():
                     stop_speed_tolerance=front_vehicle_stop_speed_tolerance,
                 )
 
-                update_side_lane_leader_from_lane0_idm(
-                    traffic_manager=traffic_manager,
-                    idm_control=idm_control,
-                    dt=Dt,
-                    num_vehicles=num_Sv,
-                    virtual_front_offset=side_lane_leader_virtual_front_offset,
-                    side_lane_speed_limit=side_lane_speed_limit,
-                    side_lane_acc_min=side_lane_acc_min,
-                    side_lane_acc_max=side_lane_acc_max,
-                    side_lane_cbf_enable=side_lane_cbf_enable,
-                    side_lane_cbf_alpha=side_lane_cbf_alpha,
-                    side_lane_cbf_s0=side_lane_cbf_s0,
-                    side_lane_cbf_time_headway=side_lane_cbf_time_headway,
-                    side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
-                )
-                update_side_lane_idm_followers(
-                    traffic_manager=traffic_manager,
-                    idm_control=idm_control,
-                    dt=Dt,
-                    num_vehicles=num_Sv,
-                    side_lane_speed_limit=side_lane_speed_limit,
-                    side_lane_acc_min=side_lane_acc_min,
-                    side_lane_acc_max=side_lane_acc_max,
-                    side_lane_cbf_enable=side_lane_cbf_enable,
-                    side_lane_cbf_alpha=side_lane_cbf_alpha,
-                    side_lane_cbf_s0=side_lane_cbf_s0,
-                    side_lane_cbf_time_headway=side_lane_cbf_time_headway,
-                    side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
-                    first_follower_id=2,
-                )
+                if configured is not None:
+                    proposal = (traffic_manager.traffic_s[0], traffic_manager.traffic_v[0], traffic_manager.traffic_alon[0])
+                    traffic_manager.traffic_s[0], traffic_manager.traffic_v[0], traffic_manager.traffic_alon[0] = previous_front
+                    configured.step(traffic_manager, Dt, s_ego_frenet_0, proposal)
+                    if 0 in scenario.parking_ids or configured.front_constrained:
+                        front_s_t, front_v_t, front_a_t = build_configured_preview(
+                            traffic_map_manager_0, sim_t, pv_dt, False,
+                            traffic_manager.traffic_s[0], traffic_manager.traffic_v[0], traffic_manager.traffic_alon[0],
+                            0., 0., front_vehicle_speed_limit)
+                else:
+                    update_side_lane_leader_from_lane0_idm(
+                        traffic_manager=traffic_manager,
+                        idm_control=idm_control,
+                        dt=Dt,
+                        num_vehicles=num_Sv,
+                        virtual_front_offset=side_lane_leader_virtual_front_offset,
+                        side_lane_speed_limit=side_lane_speed_limit,
+                        side_lane_acc_min=side_lane_acc_min,
+                        side_lane_acc_max=side_lane_acc_max,
+                        side_lane_cbf_enable=side_lane_cbf_enable,
+                        side_lane_cbf_alpha=side_lane_cbf_alpha,
+                        side_lane_cbf_s0=side_lane_cbf_s0,
+                        side_lane_cbf_time_headway=side_lane_cbf_time_headway,
+                        side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
+                    )
+                    update_side_lane_idm_followers(
+                        traffic_manager=traffic_manager,
+                        idm_control=idm_control,
+                        dt=Dt,
+                        num_vehicles=num_Sv,
+                        side_lane_speed_limit=side_lane_speed_limit,
+                        side_lane_acc_min=side_lane_acc_min,
+                        side_lane_acc_max=side_lane_acc_max,
+                        side_lane_cbf_enable=side_lane_cbf_enable,
+                        side_lane_cbf_alpha=side_lane_cbf_alpha,
+                        side_lane_cbf_s0=side_lane_cbf_s0,
+                        side_lane_cbf_time_headway=side_lane_cbf_time_headway,
+                        side_lane_cbf_emergency_decel_margin=side_lane_cbf_emergency_decel_margin,
+                        first_follower_id=2,
+                    )
 
                 if use_acceleration_pitch:
                     ego_vehicle_pitch_from_acceleration = traffic_manager.ego_acceleration_pitch_update(
@@ -990,10 +1004,14 @@ def main_double_lane_behavior_generation():
             ego_vehicle_poses = [traffic_manager.ego_x, traffic_manager.ego_y,
                                  ego_vehicle_ref_poses[2], traffic_manager.ego_yaw,
                                  ego_vehicle_ref_poses[4]]
+
             for i in range(num_Sv):
-                vehicle_pose = geometry.pose(traffic_manager.traffic_s[i], traffic_manager.traffic_l[i])
+                vehicle_pose = (configured.pose(traffic_manager, i) if configured is not None else
+                                geometry.pose(traffic_manager.traffic_s[i], traffic_manager.traffic_l[i]))
                 local_pose = host_vehicle_coordinate_transformation(vehicle_pose, ego_vehicle_poses)
                 traffic_manager.traffic_brake_status_update(i)
+                if i in scenario.parking_ids:
+                    traffic_manager.traffic_brake_status[i] = True
                 virtual_traffic_sim_info_manager.update_virtual_vehicle_state(
                     vehicle_id=i, vehicle_type=traffic_manager.traffic_type[i],
                     x=local_pose[0], y=-local_pose[1], z=local_pose[2],

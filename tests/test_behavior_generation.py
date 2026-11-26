@@ -29,15 +29,20 @@ class BehaviorScenarioTests(unittest.TestCase):
         data['vehicles'] = data['vehicles'][:2]
         self.assertEqual(len(BehaviorGenerationScenario(data).vehicles), 2)
 
-    def test_obstacle_layout_is_not_silently_reinterpreted(self):
+    def test_explicit_obstacles_supported_but_legacy_layout_still_validated(self):
+        scenario = BehaviorGenerationScenario.load(ROOT / 'config/double_lane_scenario.json')
+        self.assertEqual(scenario.parking_ids, {3})
         with self.assertRaises(ValueError):
-            BehaviorGenerationScenario.load(ROOT / 'config/double_lane_scenario.json')
+            BehaviorGenerationScenario(support.fixture_scenario())
 
 
 @unittest.skipIf(behavior is None, 'Source ROS workspace and install CasADi')
 class BehaviorRuntimeTests(unittest.TestCase):
     def run_scene(self, frames, trigger_frames=(), extra_params=None):
         data = json.loads((ROOT / 'config/double_lane_behavior_generation_scenario.json').read_text())
+        # Isolate lifecycle assertions from edits to the user's live positions.
+        for vehicle, distance in zip(data['vehicles'], (8, 9, 1, -7, -15)):
+            vehicle['initial_distance'] = distance
         data['vehicles'][-1]['type'] = 1
         params = {'/track_style': 'Rally', '/pv_states_dt': 0.5, '/runDirection': 0,
                   '/front_vehicle_travel_distance': 1000.0, '/auto_behavior_generation_enable': False}

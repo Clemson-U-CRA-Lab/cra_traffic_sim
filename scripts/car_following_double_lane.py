@@ -8,6 +8,7 @@ import rospy
 from hololens_ros_communication.msg import ref_traj_correction
 from std_msgs.msg import Int8
 
+from configured_traffic import ConfiguredTraffic
 from double_lane_scenario import DoubleLaneScenario, ScenarioSession, LaneMapGeometry
 
 from sim_env_manager import CMI_traffic_sim, hololens_message_manager, road_reader
@@ -127,6 +128,7 @@ def main_double_lane_following():
     ego_pitch = 0.0
     initial_speed, initial_profile_distance, _ = traffic_map.find_speed_profile_information(sim_t=0.0)
     session = ScenarioSession(scenario, float(np.clip(initial_speed, 0.0, speed_limit)))
+    configured = ConfiguredTraffic(scenario, geometry, idm, rospy.get_param) if scenario.explicit_behavior else None
     front_s = [0.0] * 40
     front_v = [0.0] * 40
     front_a = [0.0] * 40
@@ -165,7 +167,7 @@ def main_double_lane_following():
                 ego_omega=traffic_manager.ego_omega,
             )
 
-            ego_reference = geometry.pose(ego_s, lane_id=0)
+            ego_reference = geometry.pose(ego_s, lane_id=scenario.ego["lane_id"])
             lane_change_pose = None
             direction_pub.publish(Int8(data=run_direction))
             heartbeat_pub.publish(Int8(data=1))
@@ -175,14 +177,18 @@ def main_double_lane_following():
                 cycle = cycle_reference(traffic_map, sim_t, ego_s_init, initial_gap)
                 cycle["speed"] = float(np.clip(cycle["speed"], 0.0, speed_limit))
                 cycle["acceleration"] = float(np.clip(cycle["acceleration"], front_acc_min, front_acc_max))
-                traffic_manager.traffic_update_from_spd_profile(
-                    cycle["world_s"], cycle["speed"], cycle["acceleration"], 0
-                )
+                if configured is not None:
+                    configured.step(traffic_manager, dt, ego_s,
+                                    (cycle["world_s"], cycle["speed"], cycle["acceleration"]))
+                else:
+                    traffic_manager.traffic_update_from_spd_profile(
+                        cycle["world_s"], cycle["speed"], cycle["acceleration"], 0)
+
                 front_s, front_v, front_a = build_front_preview(
                     traffic_map,
                     sim_t,
                     preview_dt,
-                    use_preview,
+                    use_preview and (configured is None or (0 not in scenario.parking_ids and not configured.front_constrained)),
                     traffic_manager.traffic_s[0],
                     traffic_manager.traffic_v[0],
                     traffic_manager.traffic_alon[0],
@@ -193,7 +199,7 @@ def main_double_lane_following():
                     front_acc_max,
                 )
 
-                if moving_vehicle_count > 1:
+                if configured is None and moving_vehicle_count > 1:
                     obstacle_following = update_vehicle_against_stationary(
                         traffic_manager=traffic_manager,
                         idm_control=idm,
@@ -346,21 +352,23 @@ def main_double_lane_following():
             )
             traffic_manager.ego_vehicle_frenet_update(
                 s=ego_s,
-                l=0.0,
+                l=float(scenario.ego["lane_id"]),
                 sv=longitudinal_speed,
                 lv=lateral_speed,
                 yaw_s=yaw_s,
             )
             for vehicle_id in range(num_vehicles):
                 lane_id = traffic_manager.traffic_l[vehicle_id]
-                if vehicle_id == lane_change_vehicle_id and lane_change_controller is not None:
+                if configured is not None:
+                    vehicle_pose = configured.pose(traffic_manager, vehicle_id)
+                elif vehicle_id == lane_change_vehicle_id and lane_change_controller is not None:
                     vehicle_pose = lane_change_controller.get_traffic_pose()
                 else:
                     vehicle_pose = geometry.pose(
                         traffic_manager.traffic_s[vehicle_id], lane_id=lane_id
                     )
                 local_pose = host_vehicle_coordinate_transformation(vehicle_pose, ego_vehicle)
-                if vehicle_id == stationary_vehicle_id:
+                if vehicle_id in scenario.parking_ids:
                     traffic_manager.traffic_brake_status[vehicle_id] = True
                 else:
                     traffic_manager.traffic_brake_status_update(vehicle_id)

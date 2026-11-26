@@ -1,8 +1,4 @@
-"""Validated initial layouts and lifecycle for the existing double-lane runtime.
-
-This module has no ROS dependencies. Vehicle IDs retain their existing runtime
-roles; initial predecessors describe the layout, not a new motion controller.
-"""
+"""Validated initial layouts and lifecycle (no ROS dependencies)."""
 
 import json
 import math
@@ -37,12 +33,23 @@ class DoubleLaneScenario:
         _integer(ego["lane_id"], "ego_vehicle.lane_id")
         _distance(ego["initial_distance"], "ego_vehicle.initial_distance")
         vehicles = data["vehicles"]
-        minimum = 4 if stationary_last else 2
+        self.explicit_behavior = isinstance(vehicles, list) and any(
+            isinstance(v, dict) and ("operation_mode" in v or "lane_layout" in v)
+            for v in vehicles)
+        minimum = 1 if self.explicit_behavior else (4 if stationary_last else 2)
         if not isinstance(vehicles, list) or not minimum <= len(vehicles) <= 12:
             raise ValueError("vehicles must contain {}–12 objects for this runtime".format(minimum))
         for index, vehicle in enumerate(vehicles):
             label = "vehicles[{}]".format(index)
-            _fields(vehicle, ("id", "type", "lane_id", "initial_distance"), label)
+            fields = ("id", "type", "lane_id", "initial_distance")
+            if self.explicit_behavior:
+                fields += ("operation_mode", "lane_layout")
+            _fields(vehicle, fields, label)
+            if self.explicit_behavior:
+                if vehicle["operation_mode"] not in ("parking", "driving"):
+                    raise ValueError(label + ".operation_mode must be parking or driving")
+                if vehicle["lane_layout"] not in ("single_lane", "double_lane"):
+                    raise ValueError(label + ".lane_layout must be single_lane or double_lane")
             for field in ("id", "type", "lane_id"):
                 _integer(vehicle[field], label + "." + field)
             _distance(vehicle["initial_distance"], label + ".initial_distance")
@@ -51,9 +58,15 @@ class DoubleLaneScenario:
             raise ValueError("traffic IDs must be unique and contiguous starting at 0")
         self.ego = dict(ego)
         self.stationary_id = len(vehicles) - 1 if stationary_last else None
-        if ego["lane_id"] != 0 or self.vehicles[0]["lane_id"] != 0:
+        if any(v["lane_id"] not in (0, 1) for v in [ego] + self.vehicles):
+            raise ValueError("lane_id must be 0 or 1")
+        for v in self.vehicles:
+            v.setdefault("operation_mode", "parking" if v["id"] == self.stationary_id else "driving")
+            v.setdefault("lane_layout", "double_lane" if stationary_last and v["id"] == 2 else "single_lane")
+        self.parking_ids = {v["id"] for v in self.vehicles if v["operation_mode"] == "parking"}
+        if not self.explicit_behavior and (ego["lane_id"] != 0 or self.vehicles[0]["lane_id"] != 0):
             raise ValueError("ego and front vehicle ID 0 must occupy lane 0")
-        if any(v["lane_id"] != 1 for v in self.vehicles[1:]):
+        if not self.explicit_behavior and any(v["lane_id"] != 1 for v in self.vehicles[1:]):
             raise ValueError("traffic IDs 1 onward must occupy lane 1")
 
         self.lane_order = {}
@@ -72,7 +85,7 @@ class DoubleLaneScenario:
                 self.predecessors[identifier] = order[index + 1] if index + 1 < len(order) else None
 
         self.ego_leader = self.predecessors["ego"]
-        if self.ego_leader != 0:
+        if not self.explicit_behavior and self.ego_leader != 0:
             raise ValueError("front vehicle ID 0 must be ahead of ego")
         if stationary_last:
             expected_side_order = list(range(self.stationary_id - 1, 0, -1)) + [self.stationary_id]
@@ -81,13 +94,13 @@ class DoubleLaneScenario:
         else:
             expected_side_order = list(range(len(vehicles) - 1, 0, -1))
             order_error = "lane 1 moving IDs must be ordered front-to-back as 1, 2, ..."
-        if self.lane_order[1] != expected_side_order:
+        if not self.explicit_behavior and self.lane_order[1] != expected_side_order:
             raise ValueError(order_error)
         self.offsets = [v["initial_distance"] - ego["initial_distance"] for v in self.vehicles]
         for index, offset in enumerate(self.offsets):
             _distance(offset, "vehicle {} offset from ego".format(index))
         self.front_gap = self.offsets[0]
-        self.leader_offset = self.offsets[1] - self.offsets[0]
+        self.leader_offset = self.offsets[1] - self.offsets[0] if len(self.offsets) > 1 else 0.0
         _distance(self.leader_offset, "side leader offset from front vehicle")
 
     @classmethod
@@ -102,14 +115,14 @@ class DoubleLaneScenario:
         for vehicle, offset in zip(self.vehicles, self.offsets):
             manager.traffic_initialization(
                 ego_s, offset, vehicle["lane_id"], vehicle["id"], 0,
-                initial_speed=0.0 if vehicle["id"] == self.stationary_id else initial_speed,
+                initial_speed=0.0 if vehicle["id"] in self.parking_ids else initial_speed,
                 initial_acceleration=0.0,
                 vehicle_type=vehicle["type"],
             )
 
 
 class BehaviorGenerationScenario(DoubleLaneScenario):
-    """The original two-lane layout: every configured traffic vehicle moves."""
+    """Legacy behavior layouts default to driving; explicit settings override this."""
 
     def __init__(self, data):
         super().__init__(data, stationary_last=False)

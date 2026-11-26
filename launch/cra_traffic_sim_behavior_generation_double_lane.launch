@@ -1,5 +1,10 @@
 <?xml version="1.0"?>
 <launch>
+    <!-- MOBIL decision parameters for JSON double_lane vehicles. -->
+    <arg name="mobil_politeness" default="0.3"/>
+    <arg name="mobil_acceleration_threshold" default="0.2"/>
+    <arg name="mobil_safe_braking" default="4.0"/>
+    <arg name="mobil_cooldown" default="3.0"/>
     <arg name="pv_speed_profile" default="FTPcol_sec3_spd_profile.csv" />
     <arg name="dir" default="0"/>
     <arg name="use_preview" default="0"/>
@@ -27,6 +32,10 @@
     <arg name="control_target_stale_timeout" default="1.0"/>
     <arg name="auto_behavior_generation_random_seed" default="-1"/>
 
+    <param name="mobil_politeness" value="$(arg mobil_politeness)"/>
+    <param name="mobil_acceleration_threshold" value="$(arg mobil_acceleration_threshold)"/>
+    <param name="mobil_safe_braking" value="$(arg mobil_safe_braking)"/>
+    <param name="mobil_cooldown" value="$(arg mobil_cooldown)"/>
     <param name="runDirection" value="$(arg dir)"/>
     <param name="run_sim" value="$(arg sim_run)"/>
     <param name="use_acceleration_pitch" value="$(arg sim_run)"/>
